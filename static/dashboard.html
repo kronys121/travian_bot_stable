@@ -1,0 +1,1916 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Travian Bot — Панель управления</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --card-2: #1e222c;
+    --border: #2a2f3a;
+    --text: #e8e8e8;
+    --muted: #8b93a3;
+    --accent: #e94560;
+    --ok: #4ade80;
+  }
+  :root.light {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --card-2: #eaecf0;
+    --border: #d0d5dd;
+    --text: #1a1d23;
+    --muted: #6b7280;
+    --accent: #e94560;
+    --ok: #16a34a;
+  }
+  .theme-toggle {
+    order: 2;
+    display: flex; align-items: center; gap: 8px;
+    background: none; border: none; cursor: pointer;
+    color: var(--muted); font-size: 12px; font-family: inherit;
+    padding: 4px 0;
+  }
+  .theme-toggle:hover { color: var(--text); }
+  .toggle-track {
+    width: 36px; height: 20px; border-radius: 10px;
+    background: var(--card-2); border: 1px solid var(--border);
+    position: relative; transition: background .2s;
+    flex-shrink: 0;
+  }
+  :root.light .toggle-track { background: var(--accent); border-color: var(--accent); }
+  .toggle-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--muted);
+    position: absolute; top: 2px; left: 2px;
+    transition: transform .2s, background .2s;
+  }
+  :root.light .toggle-thumb { transform: translateX(16px); background: #fff; }
+  /* Светлая тема: переопределение элементов с тёмными фонами */
+  :root.light .slider { background: #cbd2dc; }
+  :root.light .res-bar { background: #d8dde5; }
+  :root.light .hero-hp-bar { background: #d8dde5; }
+  :root.light .btn-scan  { border-color: #93c5fd; color: #2563eb; }
+  :root.light .btn-farm  { border-color: #6ee7b7; color: #059669; }
+  :root.light .btn-reset-build { border-color: #fcd34d; color: #b45309; }
+  :root.light .q-del { border-color: #fca5a5; color: #dc2626; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    background: var(--bg); color: var(--text);
+    padding: 24px; line-height: 1.5;
+  }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  h1 { font-size: 20px; }
+  h1 span { color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; }
+  .lang-toggle { order: 3; background: var(--card-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .lang-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .grid { display: flex; flex-direction: column; gap: 20px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+  .acc-name { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #6b7280; flex-shrink: 0; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.off { background: var(--accent); }
+  .server { color: var(--muted); font-size: 12px; }
+  .badge { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+  .last-action { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .last-action b { color: var(--text); font-weight: 600; }
+
+  .run-controls { display: flex; gap: 8px; align-items: center; }
+  button { font: inherit; cursor: pointer; border-radius: 6px; border: none; }
+  .btn-start { background: var(--ok); color: #0f1115; padding: 6px 16px; font-weight: 700; font-size: 13px; }
+  .btn-stop  { background: var(--accent); color: #fff; padding: 6px 16px; font-weight: 700; font-size: 13px; }
+  .btn-del   { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 6px 10px; font-size: 12px; }
+  .btn-del:hover { color: var(--accent); border-color: var(--accent); }
+  .btn-scan  { background: transparent; color: #60a5fa; border: 1px solid #2f4666; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+  .btn-scan:hover { border-color: #60a5fa; }
+  .btn-farm  { background: transparent; color: #34d399; border: 1px solid #16513c; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+  .btn-farm:hover { border-color: #34d399; }
+  .btn-reset-build { background: transparent; color: #f59e0b; border: 1px solid #4a3010; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+  .btn-reset-build:hover { border-color: #f59e0b; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .sections { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 900px) { .sections { grid-template-columns: 1fr 1fr; } }
+
+  .section { background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .section h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+
+  .toggles { display: flex; flex-direction: column; gap: 8px; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .toggle label { font-size: 14px; cursor: pointer; flex: 1; }
+  .toggle small { display: block; color: var(--muted); font-size: 11px; }
+
+  .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #3a4150; border-radius: 22px; cursor: pointer; transition: 0.15s; }
+  .slider:before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: var(--text); border-radius: 50%; transition: 0.15s; }
+  .switch input:checked + .slider { background: var(--ok); }
+  .switch input:checked + .slider:before { transform: translateX(18px); }
+
+  .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .field input, .field select {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font: inherit; font-size: 13px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+
+  .q-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; margin-bottom: 6px; }
+  .q-tab-btn {
+    padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--muted); font-size: 12px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .q-tab-btn.active { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  [data-queue-panel].hidden, [data-for-panel].hidden { display: none; }
+  .queue-editor { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .queue-head, .queue-row {
+    display: grid; grid-template-columns: 1fr 1fr 1.2fr 32px; gap: 8px; align-items: center;
+  }
+  .queue-head span { font-size: 11px; color: var(--muted); }
+  .queue-row input, .queue-row select {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font: inherit; font-size: 13px;
+  }
+  .queue-row input:focus, .queue-row select:focus { outline: none; border-color: var(--accent); }
+  .q-del {
+    background: transparent; color: #f87171; border: 1px solid #4a2020;
+    border-radius: 6px; padding: 6px 0; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .q-del:hover { border-color: #f87171; }
+  .btn-add-queue {
+    margin-top: 8px; align-self: flex-start; background: transparent; color: var(--accent);
+    border: 1px dashed var(--border); border-radius: 6px; padding: 6px 12px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .btn-add-queue:hover { border-color: var(--accent); }
+
+  .sub-head { margin: 14px 0 2px; font-size: 13px; color: var(--text); }
+  .sub-hint { margin: 0 0 8px; font-size: 11px; color: var(--muted); }
+
+  /* --- Порядок задач (drag & drop) --- */
+  .task-order-list { display: flex; flex-direction: column; gap: 6px; }
+  .task-order-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); cursor: grab; user-select: none;
+    transition: border-color .15s, box-shadow .15s, opacity .15s, transform .05s;
+  }
+  .task-order-item:hover { border-color: var(--accent); }
+  .task-order-item:active { cursor: grabbing; }
+  .task-order-item.dragging {
+    opacity: .55; border-color: var(--accent);
+    box-shadow: 0 6px 20px rgba(0,0,0,.4);
+  }
+  .task-order-item.drag-over {
+    border-color: var(--accent);
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  .task-order-item .drag-handle {
+    color: var(--muted); font-size: 16px; line-height: 1; cursor: grab; flex-shrink: 0;
+  }
+  .task-order-item .order-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; flex-shrink: 0;
+    background: var(--card-2); border: 1px solid var(--border); border-radius: 50%;
+    font-size: 11px; font-weight: 700; color: var(--accent);
+  }
+  .task-order-item .task-label { flex: 1; font-size: 13px; color: var(--text); }
+  .task-order-item .task-hint { font-size: 11px; color: var(--muted); }
+
+  /* заблокированные срочные задачи (не перетаскиваются) */
+  .task-order-item.locked { cursor: default; opacity: .85; background: var(--card-2); }
+  .task-order-item.locked:hover { border-color: var(--border); }
+  .task-order-item.locked .drag-handle { visibility: hidden; }
+  .task-order-item.locked .order-num { color: var(--muted); }
+  .urgent-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    color: var(--warn, #e0a63a); border: 1px solid var(--warn, #e0a63a);
+    border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
+  }
+
+  /* --- Кнопка "Порядок задач" в шапке карточки --- */
+  .btn-order {
+    background: var(--card-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .btn-order:hover { border-color: var(--accent); }
+
+  /* --- Модальное окно --- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: flex-start; justify-content: center;
+    z-index: 1000; padding: 40px 16px; overflow-y: auto;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    width: 100%; max-width: 520px; padding: 20px 22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: modalIn .15s ease-out;
+  }
+  @keyframes modalIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .modal-head h3 { margin: 0; font-size: 16px; color: var(--text); }
+  .modal-close {
+    background: none; border: none; color: var(--muted); font-size: 22px;
+    line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+  .modal-saved-msg { font-size: 12px; color: var(--ok, #4caf7d); opacity: 0; transition: opacity .2s; }
+  .modal-saved-msg.show { opacity: 1; }
+
+  /* --- Секция улучшений кузницы --- */
+  .upg-head {
+    display: grid;
+    grid-template-columns: 1fr 90px 80px 28px;
+    gap: 6px; padding: 0 4px 4px;
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .upg-list { display: flex; flex-direction: column; gap: 6px; }
+  .upg-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 80px 28px;
+    gap: 6px; align-items: center;
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  }
+  .upg-row select, .upg-row input[type=number] {
+    background: var(--card, #1a1a1a); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 6px; font: inherit; font-size: 13px; width: 100%;
+  }
+  .upg-row select:focus, .upg-row input:focus { outline: none; border-color: var(--accent); }
+  .upg-level-wrap, .upg-priority-wrap { display: flex; flex-direction: column; gap: 2px; }
+  .upg-lbl { font-size: 10px; color: var(--muted); }
+  .vill-plan-editor { display: flex; flex-direction: column; gap: 6px; }
+  .vill-plan-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  }
+  .vill-plan-name {
+    flex: 1 1 120px; min-width: 80px; font-size: 13px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .vill-plan-sel {
+    flex: 0 0 auto; min-width: 160px;
+    background: var(--card, #1a1a1a); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 8px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .vill-plan-sel:focus { outline: none; border-color: var(--accent); }
+  .vill-plan-sel option[value=""] { color: var(--muted); }
+  .transfer-editor { display: flex; flex-direction: column; gap: 8px; }
+  .transfer-row {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  }
+  .transfer-row .tr-from { flex: 1 1 120px; min-width: 110px; }
+  .transfer-row .tr-arrow { color: var(--muted); font-weight: 700; }
+  .transfer-row .tr-x, .transfer-row .tr-y { width: 62px; }
+  .transfer-row .tr-reserve { width: 84px; }
+  .transfer-row input:not([type="checkbox"]), .transfer-row select {
+  background: var(--card, #1a1a1a); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; font: inherit; font-size: 13px;
+  }
+  .transfer-row input:focus, .transfer-row select:focus { outline: none; border-color: var(--accent); }
+  .transfer-row .tr-res {
+  display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted);
+  }
+  .transfer-row .tr-res input { width: auto; }
+  
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+  button.save { background: var(--accent); color: #fff; padding: 8px 20px; font-size: 14px; font-weight: 700; }
+  button.save:hover { opacity: 0.9; }
+  a.logs-link { color: var(--accent); font-size: 13px; text-decoration: none; }
+  a.logs-link:hover { text-decoration: underline; }
+  .saved-msg { color: var(--ok); font-size: 13px; opacity: 0; transition: opacity 0.3s; }
+  .saved-msg.show { opacity: 1; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+
+  /* --- панель статистики --- */
+  .stats-panel { background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .stats-panel h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+  .stats-panel h3 small { text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .stat-block h4 { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+  .res-row { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; }
+  .res-row .prod { color: var(--muted); font-size: 11px; }
+  .res-row .prod.pos { color: var(--ok); }
+  .res-row .prod.neg { color: var(--accent); }
+  .res-bar { height: 3px; background: #3a4150; border-radius: 2px; margin: 2px 0 6px; overflow: hidden; }
+  .res-bar i { display: block; height: 100%; background: var(--ok); border-radius: 2px; }
+  .res-bar i.warn { background: #eab308; }
+  .res-bar i.full { background: var(--accent); }
+  .troop-row { display: flex; justify-content: space-between; font-size: 13px; }
+  .troop-row + .troop-row { margin-top: 3px; }
+  .hero-hp-bar { height: 6px; background: #3a4150; border-radius: 3px; margin: 4px 0 8px; overflow: hidden; }
+  .hero-hp-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
+  .hero-hp-bar i.mid { background: #eab308; }
+  .hero-hp-bar i.low { background: var(--accent); }
+  .hero-line { display: flex; justify-content: space-between; font-size: 13px; }
+  .attack-alert { background: rgba(233, 69, 96, 0.12); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; font-size: 12px; color: var(--accent); margin-top: 8px; }
+  .village-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .village-tab { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+  .village-tab:hover { color: var(--fg); border-color: var(--muted); }
+  .village-tab.active { background: var(--ok); border-color: var(--ok); color: #10131a; font-weight: 600; }
+  .no-attacks { color: var(--ok); font-size: 12px; }
+  .stat-empty { color: var(--muted); font-size: 12px; }
+
+  /* --- форма добавления аккаунта --- */
+  .add-card h2 { font-size: 15px; margin-bottom: 12px; }
+  .add-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; align-items: end; }
+  .add-form .field.wide { grid-column: span 2; }
+  .server-row { display: flex; gap: 6px; }
+  .server-row input { flex: 1; }
+  .btn-mini { background: var(--card-2); color: var(--text); border: 1px solid var(--border); padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+  .btn-mini:hover { border-color: var(--accent); }
+  .check-result { font-size: 11px; margin-top: 3px; min-height: 15px; }
+  .check-result.ok { color: var(--ok); }
+  .check-result.bad { color: var(--accent); }
+  .form-note { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+  .form-hint { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.5; }
+  .farm-troop-field { grid-column: 1 / -1; }
+  .farm-troop-list {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+  }
+  .farm-troop-item {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 20px;
+    background: var(--bg); cursor: pointer; font-size: 13px; color: var(--text);
+    transition: border-color 0.15s, background 0.15s;
+    user-select: none;
+  }
+  .farm-troop-item:has(.farm-troop-cb:checked) {
+    border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .farm-troop-item input[type="checkbox"] { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <button id="lang-toggle" class="lang-toggle" onclick="toggleLang()">EN</button>
+  <button class="theme-toggle" onclick="toggleTheme()" title="Ночной / дневной режим">
+    <span id="theme-label">День</span>
+    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+  </button>
+  <h1>Travian Bot <span>//</span> Панель управления</h1>
+  <p class="hint">Изменения применяются ботом на лету. Каждый аккаунт — независимый процесс.</p>
+</header>
+
+<main id="accounts" class="grid"><p class="empty">Загрузка...</p></main>
+
+<section class="card add-card" style="margin-top:20px">
+  <h2>+ Добавить аккаунт</h2>
+  <div class="add-form">
+    <div class="field">
+      <label for="new-name">Имя (уникальное, латиница)</label>
+      <input id="new-name" placeholder="acc2">
+    </div>
+    <div class="field wide">
+      <label for="new-server">Сервер</label>
+      <div class="server-row">
+        <input id="new-server" list="server-list" placeholder="ts30.x3.international.travian.com">
+        <button class="btn-mini" onclick="loadServers(this)">Список серверов</button>
+        <button class="btn-mini" onclick="checkServer()">Проверить</button>
+      </div>
+      <datalist id="server-list"></datalist>
+      <div id="server-check" class="check-result"></div>
+    </div>
+    <div class="field">
+      <label for="new-email">Логин / email</label>
+      <input id="new-email" placeholder="user@mail.com">
+    </div>
+    <div class="field">
+      <label for="new-password">Пароль</label>
+      <input id="new-password" type="password" placeholder="••••••">
+    </div>
+    <div class="field">
+      <label for="new-build-template">Конфигурация постройки</label>
+      <select id="new-build-template">
+        <option value="x3" selected>Non-raid x3/x5 — Гайд Tikiii971</option>
+        <option value="x1">Стандарт x1 — Экономика, поля 5+5, Резиденция</option>
+        <option value="gauls_x1">Галлы x1 (Caim) — 3 Party Farming</option>
+        <option value="farmer">Фармер — упор на поля и склады</option>
+        <option value="capital">Столица — Дворец, Ратуша, поля 10+10</option>
+        <option value="offense">Оффник — Казармы/Конюшня 20 ур.</option>
+        <option value="defense">Дефер — Казармы + Стена 20 ур.</option>
+        <option value="none">Без плана — не строить</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="new-rate">Скорость сервера</label>
+      <select id="new-rate">
+        <option value="1">x1</option>
+        <option value="3" selected>x3</option>
+        <option value="5">x5</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="new-headless">Браузер</label>
+      <select id="new-headless">
+        <option value="true" selected>Скрытый (headless)</option>
+        <option value="false">Видимый</option>
+      </select>
+    </div>
+    <div class="field">
+    <label for="new-proxy">Прокси (необязательно)</label>
+    <input id="new-proxy" placeholder="http://user:pass@host:port">
+    <small class="form-hint">http://host:port · http://user:pass@host:port · socks5://host:port (без пароля). SOCKS5 с паролем не поддерживается.</small>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="save" style="width:100%" onclick="addAccount(this)">Добавить</button>
+    </div>
+    <p class="form-note" id="form-note">
+      Пароль сохраняется в accounts_gui.json рядом с ботом. Безопаснее — оставить поле пустым
+      и задать в .env: TRAVIAN_EMAIL_ИМЯ / TRAVIAN_PASSWORD_ИМЯ (имя аккаунта заглавными).
+      Аккаунты из config.yaml тоже видны здесь; их логин/пароль редактируются в файле.
+    </p>
+  </div>
+</section>
+
+<script>
+// ===== i18n: переключатель языка меню (RU -> EN) =====
+let LANG = localStorage.getItem("ui_lang") === "en" ? "en" : "ru";
+const T_EN = {
+  // Шапка
+  "Панель управления": "Dashboard",
+  "Изменения применяются ботом на лету. Каждый аккаунт — независимый процесс.":
+    "Changes are applied by the bot on the fly. Each account is an independent process.",
+  // Фичи (тумблеры)
+  "Фарм оазисов": "Oasis farming",
+  "Скан и набеги по списку": "Scan and raid from list",
+  "Фарм только героем": "Hero-only farming",
+  "Ранний старт: одна безопасная цель за цикл, войска не тратятся":
+    "Early start: one safe target per cycle, troops are preserved",
+  "Фарм героем + войсками": "Hero + troops farming",
+  "Фарм героем": "Hero farming",
+  "Фарм героем (задача)": "Hero farming (task)",
+  "Герой бьёт оазисы с животными": "Hero raids oases with animals",
+  "Отдельная задача: герой бьёт оазисы с животными. Порядок настраивается в «Порядок задач»":
+    "Separate task: hero raids oases with animals. Order is set in “Task order”",
+  "В одном цикле: войска — по пустым оазисам, герой — по оазисам с животными (по силе)":
+    "In one cycle: troops raid empty oases, the hero raids animal oases (by strength)",
+  "Стройка": "Building",
+  "Smart Builder по плану": "Smart Builder by plan",
+  "Стройка с рекламой": "Ad-boosted building",
+  "section2: -25% времени (реклама ~40с, откат на обычную)":
+    "section2: -25% time (ad ~40s, falls back to normal)",
+  "Тренировка войск": "Troop training",
+  "Дотренировка до цели (по умолч. выкл)": "Train up to target (off by default)",
+  "NPC-обмен": "NPC trade",
+  "Обмен ресурсов при переполнении (по умолч. выкл)":
+    "Resource swap on overflow (off by default)",
+  "Сбор наград": "Reward collection",
+  "Награды за задания": "Quest rewards",
+  "Приключения героя": "Hero adventures",
+  "Авто-отправка героя": "Auto-send hero",
+  "Авто-праздники (Ратуша)": "Auto-celebrations (Town Hall)",
+  "Авто-улучшение (Кузница)": "Auto-upgrade (Smithy)",
+  "Улучшение (Кузница)": "Upgrade (Smithy)",
+  "Каждый юнит: укажи целевой уровень (1-20) и приоритет (1 = первым). Бот улучшает по одному за раз, начиная с наименьшего приоритета.":
+    "Each unit: set target level (1-20) and priority (1 = first). Bot upgrades one at a time, starting with the lowest priority number.",
+  "До уровня": "Target Level",
+  "Приоритет": "Priority",
+  "Запускать малый праздник в Ратуше если не идёт — для накопления КО": "Start a small celebration in Town Hall when idle — to accumulate culture points",
+  "Галлы x1 (Caim)": "Gauls x1 (Caim)",
+  "3 Party Farming: Гром, Ратуша, Резиденция 10, поселенцы.": "3 Party Farming: TT, Town Hall, Residence 10, settlers.",
+  "Сократить время приключения": "Shorten adventure time",
+  "Смотреть видео перед отправкой: -25% времени (1-я фиолетовая кнопка)": "Watch video before sending: -25% time (1st purple button)",
+  "Повысить сложность приключения": "Boost adventure difficulty",
+  "Смотреть видео для апгрейда до сложного уровня (2-я фиолетовая кнопка)": "Watch video to upgrade to hard difficulty (2nd purple button)",
+  "Эвазия при атаке": "Evade on attack",
+  "Вывод войск при входящей атаке": "Pull troops on incoming attack",
+  // Поля фарма
+  "Юнитов на набег": "Units per raid",
+  "Макс. дистанция": "Max distance",
+  "Радиус скана": "Scan radius",
+  "Интервал фарма, мин": "Farm interval, min",
+  "Кулдаун оазиса, мин": "Oasis cooldown, min",
+  "Скорость войск, кл/час (0 = выкл)": "Troop speed, tiles/h (0 = off)",
+  "Терпеть животных до, защиты (0 = отменять при любых)":
+    "Tolerate animals up to, defense (0 = cancel on any)",
+  "Запас героя, % (150 = в 1.5x сильнее)": "Hero safety, % (150 = 1.5x stronger)",
+  "Цель эвазии X": "Evade target X",
+  "пусто — ближайший оазис": "empty — nearest oasis",
+  "Цель эвазии Y": "Evade target Y",
+  // Поля тренировки
+  "Макс. за заказ, шт (0 = без лимита)": "Max per order (0 = no limit)",
+  "Тратить не более, % ресурсов": "Spend no more than, % of resources",
+  "Юнит для фарма": "Farm unit",
+  "Племя": "Tribe",
+  "Порог NPC-обмена, %": "NPC trade threshold, %",
+  // Племена
+  "Римляне": "Romans", "Германцы": "Teutons", "Галлы": "Gauls",
+  "Египтяне": "Egyptians", "Гунны": "Huns", "Спартанцы": "Spartans",
+  // Очередь тренировки
+  "Юнит": "Unit", "До шт": "To qty", "Здание": "Building",
+  "Казарма": "Barracks", "Конюшня": "Stable",
+  "+ Добавить юнит �� очередь": "+ Add unit to queue",
+  "Тренировать до, шт": "Train up to, qty",
+  "Удалить из очереди": "Remove from queue",
+  // Секции
+  "Фарм": "Farm", "Тренировка": "Training", "Статистика": "Statistics", "Торговля": "Trade",
+  "Ресурсы": "Resources", "Войска в деревне": "Troops in village", "Герой": "Hero",
+  "нет войск в деревне": "no troops in village", "Свободное зерно": "Free crop",
+  "логин в .env": "login in .env",
+  // Здания (game-scraped, RU -> EN)
+  "Лесопилка": "Sawmill", "Глиняный карьер": "Clay Pit", "Железный рудник": "Iron Mine",
+  "Ферма": "Cropland", "Пашня": "Cropland", "Лесосека": "Woodcutter",
+  "Склад": "Warehouse", "Амбар": "Granary", "Главное здание": "Main Building",
+  "Пункт сбора": "Rally Point", "Рынок": "Marketplace", "Кузница": "Smithy",
+  "Казарма": "Barracks", "Конюшня": "Stable", "Мастерская": "Workshop",
+  "Академия": "Academy", "Ратуша": "Town Hall", "Резиденция": "Residence",
+  "Дворец": "Palace", "Тайник": "Cranny", "Посольство": "Embassy",
+  "Стена": "Wall", "Земляной вал": "Earth Wall", "Частокол": "Palisade",
+  "Каменная стена": "City Wall", "Пекарня": "Bakery", "Мельница": "Grain Mill",
+  "Кирпичный завод": "Brickyard", "Литейный завод": "Iron Foundry",
+  "Лесопильный завод": "Sawmill", "Оружейная палата": "Armoury",
+  "Тур��ирная площадь": "Tournament Square",
+  // Статусы (герой/аккаунт, game-scraped)
+  "дома": "at home", "В деревне": "In village", "в деревне": "in village",
+  "в походе": "on adventure", "мёртв": "dead", "мертв": "dead",
+  "восстанавливается": "reviving", "в пути": "on the way",
+  // Статусы бота (last_action, из Python)
+  "Остановлен из GUI": "Stopped from GUI", "Остановлен": "Stopped",
+  "Запуск...": "Starting...", "Работает": "Running", "Инициализация": "Initializing",
+  "Не запущен": "Not started", "Запущен": "Started",
+  "💤 CAPTCHA — пауза 30 мин": "💤 CAPTCHA — 30 min pause",
+  "🚨 АТАКА! Эвакуация войск": "🚨 ATTACK! Evacuating troops",
+  "🗺️ Принудительный скан карты": "🗺️ Forced map scan",
+  "♻️ Перескан известных оазисов": "♻️ Rescan of known oases",
+  "🌙 Ночной режим": "🌙 Night mode",
+  "💤 Жду следующую задачу": "💤 Waiting for next task",
+  // Префиксы динамических статусов "Выполняю: X" / "Готово: X"
+  "Выполняю": "Running", "Готово": "Done",
+  // Ключи задач (task_name)
+  "farm": "Farming", "build": "Building", "train": "Training", "tasks": "Quests",
+  "adventure": "Adventure", "npc_trade": "NPC trade", "stats": "Stats",
+  "scan": "Scan", "rescan": "Rescan", "evade": "Evade", "transfer": "Transfer",
+  // Переброска ресурсов
+  "Переброска ресурсов": "Resource transfer",
+  "Отправка излишков между своими деревнями по расписанию": "Send surplus between your villages on a schedule",
+  "Интервал переброски, мин": "Transfer interval, min",
+  "Переброска между деревнями": "Transfer between villages",
+  "Излишки из деревни-донора уходят на координаты цели. Резерв — сколько оставить в доноре.":
+    "Surplus from the donor village is sent to the target coordinates. Reserve — how much to keep in the donor.",
+  "+ Добавить правило": "+ Add rule",
+  "Строительство": "Construction", "Аккаунт": "Account", "Входящ��е атаки": "Incoming attacks",
+  "Деревня": "Village",
+  // Статистика — блок кузницы
+  "Кузница": "Smithy", "ничего не улучшается": "nothing upgrading", "Юнит": "Unit",
+  "Атака войсками": "Attack now", "Сбросить счётчик и сразу отправить войска на оазисы":
+    "Reset the timer and send troops to oases right now",
+  // Статистика — блок аккаунта
+  "Золото": "Gold", "Серебро": "Silver", "Золотой клуб": "Gold club",
+  "Защита новичка": "Beginner protection", "активен": "active", "нет": "no",
+  "активна": "active", "закончилась": "expired",
+  // Статистика — герой
+  "Уровень": "Level", "Опыт": "Experience", "Статус": "Status",
+  "нет данных о герое": "no hero data",
+  // Статистика — пустые сос��ояния
+  "очередь пуста": "queue is empty", "нет данных": "no data", "Атак нет": "No attacks",
+  "Пока нет данных — появятся после первого сбора (~30 сек после с��а��та бота).":
+    "No data yet — it will appear after the first collection (~30s after the bot starts).",
+  // Модули
+  "Модули (вкл/выкл на ле��у)": "Modules (toggle on the fly)",
+  // Кнопки / статусы аккаунта
+  "Старт": "Start", "Стоп": "Stop",
+  "Полный скан": "Full scan", "Перескан": "Rescan", "Сброс стройки": "Reset build",
+  "удалить": "delete", "Сохран��ть настройки": "Save settings",
+  "Сохранено — бот применит на следующей задаче": "Saved — the bot will apply on the next task",
+  "Применено — бот увидит перед следующей задачей": "Applied — the bot will see it before the next task",
+  "Открыть логи →": "Open logs →",
+  "Полный скан всего радиуса вокруг деревни": "Full scan of the whole radius around the village",
+  "Быстрый перескан только известных оазисов": "Quick rescan of known oases only",
+  "Сбросить прогресс стройки на шаг 1 — бот начнёт план заново":
+    "Reset build progress to step 1 — the bot restarts the plan",
+  "Задан в config.yaml": "Defined in config.yaml",
+  "Удалить аккаунт": "Delete account",
+  // Транзиентные статусы кнопок
+  "Команда отправлена...": "Command sent...", "В очереди": "Queued",
+  "Сброс...": "Resetting...", "Сброшено": "Reset done",
+  "Загрузка...": "Loading...", "Ошибка": "Error",
+  "Проверяю...": "Checking...", "Список серверов": "Server list",
+  "Впиши адрес сервера": "Enter the server address",
+  "Сервер отвечает, это Travian": "Server responds, it is Travian",
+  "Нет аккаунтов — добавь ниже": "No accounts — add one below",
+  // Форма добавления аккаунта
+  "+ Добавить аккаунт": "+ Add account",
+  "Имя (уникальное, латиница)": "Name (unique, latin)",
+  "Сервер": "Server", "Проверить": "Check",
+  "Логин / email": "Login / email", "Пароль": "Password",
+  "Скорость сервера": "Server speed", "Браузер": "Browser",
+  "Скрытый (headless)": "Headless", "Видимый": "Visible",
+  "Юниты для фарма": "Farm units",
+  "Стройка": "Building",
+  "Шаблон застройки по деревням": "Village build templates",
+  "Выбери стратегию для каждой деревни. Бот применит нужный план при следующем запуске стройки.":
+    "Choose a build strategy for each village. The bot will apply it on the next build run.",
+  "Стандарт x1": "Standard x1",
+  "Скорость x3/x5": "Speed x3/x5",
+  "Non-raid x3/x5": "Non-raid x3/x5",
+  "Герой в ресурсы, поля до 3, Ратуша → 2я деревня. По гайду Tikiii971.": "Hero into resources, fields to 3, Town Hall → 2nd village. Tikiii971 guide.",
+  "Фармер": "Farmer",
+  "Столица": "Capital",
+  "Оффник": "Offense",
+  "Дефер": "Defense",
+  "Без плана": "No plan",
+  "Экономика, поля 5+5, Резиденция.": "Economy, fields 5+5, Residence.",
+  "Быстрые склады, Ратуша для ЕК.": "Fast warehouses, Town Hall for CP.",
+  "Упор на поля и склады. Минимум зданий.": "Focus on fields and storage. Minimal buildings.",
+  "Дворец, Ратуша, поля 10+10.": "Palace, Town Hall, fields 10+10.",
+  "Казармы / конюшня 20 ур. Максимум войск.": "Barracks / stable lvl 20. Max attack troops.",
+  "Казармы / конюшня + стена 20 ур.": "Barracks / stable + wall lvl 20.",
+  "Не строить ничего в этой д��ревне.": "Do not build anything in this village.",
+  "Прокси (необязательно)": "Proxy (optional)", "Добавить": "Add",
+  "http://host:port · http://user:pass@host:port · socks5://host:port (без пароля). SOCKS5 с паролем не поддерживается.":
+    "http://host:port · http://user:pass@host:port · socks5://host:port (no password). SOCKS5 with password is not supported.",
+};
+// Обратный словарь: game-scraped EN значения -> RU.
+// Применяется когда LANG=ru, но сервер игры отдал название на EN
+// (например международный сервер возвращает "Phalanx" вместо "Фаланга").
+const T_RU = {
+  // Войска — Галлы
+  "Phalanx":"Фаланг��","Swordsman":"Мечник","Pathfinder":"Следопыт",
+  "Theutates Thunder":"Тевтатский гром","Druidrider":"Друид-всадник",
+  "Haeduan":"Эдуйская конница","Ram":"Таран","Trebuchet":"Кат��пульта",
+  "Chieftain":"Вождь",
+  // Войска — Римляне
+  "Legionnaire":"Легионер","Praetorian":"Преторианец","Imperian":"Империанец",
+  "Equites Legati":"Конный разведчик","Equites Imperatoris":"Конница императора",
+  "Equites Caesaris":"Цезарис","Fire Catapult":"Огненная катапульта","Senator":"Сенатор",
+  // Войска — Германцы
+  "Clubswinger":"Дубинщик","Spearman":"Копейщик","Axeman":"Топорщик",
+  "Scout":"Скаут","Paladin":"Паладин","Teutonic Knight":"Тевтонская конница",
+  "Catapult":"Катапульта","Chief":"Вождь",
+  // Войска — Египтяне
+  "Slave Militia":"Раб-ополченец","Ash Warden":"Меченосец",
+  "Khopesh Warrior":"Меченосец","Sopdu Explorer":"Разведчик на верблюде",
+  "Anhur Guard":"Колесница Хепри","Resheph Chariot":"Ре-конница",
+  "Stone Catapult":"Катапульта","Nomarch":"Номарх",
+  // Войска — Гунны
+  "Mercenary":"Наёмник","Bowman":"Лучник","Spotter":"Конный разведчик",
+  "Steppe Rider":"Степной всадник","Marksman":"Марсман","Marauder":"Всадник",
+  "Logades":"Логадес",
+  // Войска — Спартанцы
+  "Hoplite":"Гоплит","Sensor":"Сеннон","Shieldsman":"Копейщик",
+  "Twinsteel Therion":"Всадник совета","Elpida Rider":"Коринфский всадник",
+  "Corinthian Crusher":"Всадник Тумана","Ephor":"Эфор",
+  // Войска — общее
+  "Settler":"Поселенец",
+  // Здания (EN->RU)
+  "Sawmill":"Лесопилка","Clay Pit":"Глиняный карьер","Iron Mine":"Железный рудник",
+  "Cropland":"Ферма","Woodcutter":"Лесосека","Warehouse":"Склад","Granary":"Амбар",
+  "Main Building":"Главное здание","Rally Point":"Пункт сбора",
+  "Marketplace":"Рынок","Smithy":"Кузница","Barracks":"Казарма","Stable":"Конюшня",
+  "Workshop":"Мастерская","Academy":"Академия","Town Hall":"Ратуша",
+  "Residence":"Резиденция","Palace":"Дворец","Cranny":"Тайник","Embassy":"Посольство",
+  "Wall":"Стена","Earth Wall":"Земляной вал","Palisade":"Частокол",
+  "City Wall":"Каменная стена","Bakery":"Пекарня","Grain Mill":"Мельница",
+  "Brickyard":"Кирпичный завод","Iron Foundry":"Литейный завод",
+  "Armoury":"Оружейная палата","Tournament Square":"Турнирная площадь",
+  // Статусы героя (EN->RU)
+  "at home":"дома","in village":"в деревне","on adventure":"в походе",
+  "dead":"мёртв","reviving":"восстанавливается","on the way":"в пути",
+  // Статус блоков
+  "no troops in village":"нет войск в деревне",
+  "Troops in village":"Войска в деревне",
+  "Construction":"Строительство","Resources":"Ресурсы",
+  "Statistics":"Статистика","Village":"Деревня","Hero":"Герой",
+  "Account":"Аккаунт","Incoming attacks":"Входящие атаки",
+  "no data":"нет данных","no hero data":"нет данных о герое",
+  "queue is empty":"очередь пуста","No attacks":"Атак нет",
+};
+// t(s) — переводит строку в нужный язык.
+// В EN-режиме: RU -> EN через T_EN.
+// В RU-режиме: если строка пришла с EN-сервера — EN -> RU через T_RU.
+function t(s){
+  if (s == null) return s;
+  const k = String(s).trim();
+  if (LANG === "en") return (k in T_EN) ? T_EN[k] : s;
+  // RU-режим: нормализуем game-scraped EN-значения обратно в русский
+  return (k in T_RU) ? T_RU[k] : s;
+}
+function applyLang(root){
+  root = root || document.body;
+  // Выбираем словарь и фильтр в зависимости от режима:
+  // EN-режим: заменяем RU -> EN (T_EN); RU-режим: исправляем game-scraped EN -> RU (T_RU).
+  const dict = (LANG === "en") ? T_EN : T_RU;
+  // 1) текстовые узлы (точное совпадение по обрезанному тексту)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    const k = n.nodeValue.trim();
+    if (k && (k in dict)) n.nodeValue = n.nodeValue.replace(k, dict[k]);
+  });
+  // 2) placeholder и title — только в EN-режиме (в RU не трогаем атрибуты)
+  if (LANG === "en") {
+    root.querySelectorAll("[placeholder]").forEach(el => {
+      const k = (el.getAttribute("placeholder")||"").trim();
+      if (k in dict) el.setAttribute("placeholder", dict[k]);
+    });
+    root.querySelectorAll("[title]").forEach(el => {
+      const k = (el.getAttribute("title")||"").trim();
+      if (k in dict) el.setAttribute("title", dict[k]);
+    });
+  }
+}
+function toggleLang(){
+  LANG = (LANG === "en") ? "ru" : "en";
+  localStorage.setItem("ui_lang", LANG);
+  location.reload();   // перерисовать всё в выбранном языке
+}
+function applyTheme(light){
+  document.documentElement.classList.toggle("light", light);
+  const lbl = document.getElementById("theme-label");
+  if (lbl) lbl.textContent = light ? "Ночь" : "День";
+}
+function toggleTheme(){
+  const isLight = !document.documentElement.classList.contains("light");
+  localStorage.setItem("ui_theme", isLight ? "light" : "dark");
+  applyTheme(isLight);
+}
+// Восстанавливаем тему при загрузке
+(function(){ applyTheme(localStorage.getItem("ui_theme") === "light"); })();
+
+// Экспорт настроек аккаунта в JSON-файл
+async function exportSettings(name){
+  try {
+    const resp = await fetch(`/api/accounts/${encodeURIComponent(name)}/settings`);
+    if (!resp.ok) { alert("Ошибка экспорта"); return; }
+    const data = await resp.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `bot_settings_${name}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch(e) { alert("Ошибка экспорта: " + e); }
+}
+
+// Импорт настроек аккаунта из JSON-файла
+function importSettings(name){
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const resp = await fetch(`/api/accounts/${encodeURIComponent(name)}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (resp.ok) { alert("Настройки импортированы"); refresh(); }
+      else { alert("Ошибка импорта: " + resp.status); }
+    } catch(e) { alert("Некорректный JSON: " + e); }
+  };
+  input.click();
+}
+// Перевод статуса last_action: сначала точное совпа��ени��,
+// затем разбор шаблона "Префикс: Значение" (напр. "Выполняю: farm").
+function translateStatus(s){
+  if (LANG !== "en" || s == null) return s;
+  const k = String(s).trim();
+  if (k in T_EN) return T_EN[k];
+  const i = k.indexOf(": ");
+  if (i > 0){
+    const head = k.slice(0, i).trim();
+    const tail = k.slice(i + 2).trim();
+    if (head in T_EN) return T_EN[head] + ": " + (tail in T_EN ? T_EN[tail] : tail);
+  }
+  return s;
+}
+// Строка статуса с переведёнными подписями и значениями
+function statusHtml(acc){
+  const sLbl = (LANG === "en") ? "Status" : "Статус";
+  const vLbl = (LANG === "en") ? "Village" : "Деревня";
+  let html = `${sLbl}: <b>${esc(translateStatus(acc.status.last_action))}</b> · ${vLbl}: ${esc(acc.status.current_village)}`;
+  // Прогресс стройки: build_progress = {village_key: step}
+  const bp = acc.build_progress || {};
+  const steps = Object.entries(bp);
+  if (steps.length > 0) {
+    const bLbl = (LANG === "en") ? "Build step" : "Шаг стройки";
+    const parts = steps.map(([k, v]) => `${esc(k.replace("village_", "#"))}: ${esc(String(v))}`);
+    html += ` · ${bLbl}: <b>${parts.join(", ")}</b>`;
+  }
+  return html;
+}
+
+const FEATURES = [
+  ["farm_enabled",      "Фарм оазисов",              "Скан и набеги по списку"],
+  ["hero_only",         "Фарм только героем",         "Ранний старт: одна безопасная цель за цикл, войска не тратятся"],
+  ["hero_with_troops",  "Фарм героем + войсками",     "В одном цикле: войска — по пустым оазисам, герой — по оазисам с животными (по силе)"],
+  ["hero_farm_enabled", "Фарм героем (задача)",       "Отдельная задача: герой бьёт оазисы с животными. Порядок настраивается в «Порядок задач»"],
+  ["build_enabled",      "Стройка",                    "Smart Builder по плану"],
+  ["build_night_enabled","Стройка ночью",               "Строить в ночные часы (sleep_hours). Выкл — пауза стройки ночью"],
+  ["build_use_ads",      "Стройка с рекламой",          "section2: -25% времени (реклама ~40с, откат на обычную)"],
+  ["train_enabled",     "Тренировка войск",           "Дотренировка до цели (по умолч. выкл)"],
+  ["npc_trade_enabled", "NPC-обмен",                 "Обмен ресурсов при переполнении (по умолч. выкл)"],
+  ["transfer_enabled",  "Переброска ресурсов",        "Отправка излишков между своими деревнями по расписанию"],
+  ["tasks_enabled",     "Сбор наград",               "Награды за задания"],
+  ["adventure_enabled",    "Приключения героя",          "Авто-отправка героя"],
+  ["adv_shorten_enabled",  "Сократить время приключения", "Смотреть видео перед отправкой: -25% времени (1-я фиолетовая кнопка)"],
+  ["adv_difficulty_enabled","Повысить сложность приключения","Смотреть видео для апгрейда до сложного уровня (2-я фиолетовая кнопка)"],
+  ["celebration_enabled",  "Авто-праздники (Ратуша)",   "Запускать ма��ый праздник в Ратуше если не идёт — для накопления КО"],
+  ["smithy_enabled",       "Авто-улучшение (Кузница)",  "Улучшать войска в кузнице до заданных уровней по приоритету"],
+  ["smithy_use_ads",       "Улучшение юнитов за рекламу", "Смотреть видео при улучшении в кузнице: -25% времени (реклама ~40с, откат на обычное)"],
+  ["evasion_enabled",      "Эвазия при атаке",           "Вывод войск при входящей атаке"],
+  ];
+
+// Периодические задачи, порядок которых можно менять перетаскиванием.
+// key должен совпадать с именем задачи в планировщике (runner.py).
+// Срочные задачи (эвазия/скан) сюда не входят — они всегда важнее.
+const TASK_ORDER_META = [
+  ["farm",        "Фарм оазисов",       "Скан и набеги"],
+  ["hero_farm",   "Фарм героем",        "Герой бьёт оазисы с животными"],
+  ["build",       "Стройка",            "Smart Builder по плану"],
+  ["train",       "Тренировка войск",   "Дотренировка до цели"],
+  ["tasks",       "Сбор наград",        "Награды за задания"],
+  ["adventure",   "Приключения героя",  "Авто-отправка героя"],
+  ["celebration", "Праздники (Ратуша)", "Малый праздник для КО"],
+  ["smithy",      "Кузница",            "Улучшение войск"],
+  ["npc_trade",   "NPC-обмен",          "Обмен при переполнении"],
+  ["transfer",    "Переброска",         "Ресурсы между деревнями"],
+  ["stats",       "Статистика",         "Сбор ресурсов/войск/героя"],
+];
+const TASK_ORDER_DEFAULT = TASK_ORDER_META.map(x => x[0]);
+
+// Срочные задачи ��� запускаются немедленно по событию и всегда важнее
+// обычных. ��орядок не настраивается, показываем для полноты картины.
+const TASK_URGENT_META = [
+  ["evade",  "Эвазия при атаке", "��гновенный вывод войск"],
+  ["scan",   "Полный скан",      "Скан всего радиуса вокруг деревни"],
+  ["rescan", "Перескан",         "Быстрый перескан известных оазисов"],
+];
+
+const FARM_FIELDS = [
+  ["troops_per_raid",  "Юнитов на набег", 1],
+  ["max_distance",     "Макс. дистанция", 0.5],
+  ["scan_radius",      "Радиус скана", 1],
+  ["interval_minutes", "Интервал фарма, мин", 5],
+  ["cooldown_minutes", "Кулдаун оазиса, мин", 5],
+  ["troop_speed_tph",  "Скорость войск, кл/час (0 = выкл)", 1],
+  ["max_animal_defense", "Терпеть животных до, защиты (0 = отменять при любых)", 10],
+  ["hero_safety_pct",  "Запас героя, % (150 = в 1.5x сильнее)", 10],
+];
+
+// Названия войск по племени. В коде везде используется ИНДЕКС (1-10),
+// а в GUI показываем читаемые имена. Индекс = позиция в массиве + 1.
+const TRIBE_LABELS = {
+  roman: "Римляне", teuton: "Германцы", gaul: "Галлы",
+  egyptian: "Египтяне", hun: "Гунны", spartan: "Спартанцы",
+};
+const TRIBES = {
+  roman:    ["Легионер","Преторианец","Империанец","Конный разведчик","Конница императора","Цезарис","Таран","Огненная катапульта","Сенатор","Поселенец"],
+  teuton:   ["Дубинщик","Копейщик","Топорщик","Скаут","Паладин","Тевтонская конница","Таран","Катапульта","Вождь","Поселенец"],
+  gaul:     ["Фаланга","Мечник","Следопыт","Тевтатский гром","Друид-всадник","Эдуйская конница","Таран","Катапульта","Вождь","Поселенец"],
+  egyptian: ["Раб-ополченец","Копейщик","Меченосец","Разведчик на верблюде","Колесница Хепри","Ре-конница","Таран","Катапульта","Номарх","Поселенец"],
+  hun:      ["Наёмник","Лучник","Конный разведчик","Степной всадник","Марсман","Всадник","Таран","Катапульта","Логадес","Пос��ленец"],
+  spartan:  ["Гоплит","Сеннон","Копейщик","Всадник Совета","Коринфский всадник","Всадник Тумана","Таран","Кат��пульта","Эфор","Поселенец"],
+};
+const TRIBES_EN = {
+  roman:    ["Legionnaire","Praetorian","Imperian","Equites Legati","Equites Imperatoris","Equites Caesaris","Battering Ram","Fire Catapult","Senator","Settler"],
+  teuton:   ["Clubswinger","Spearman","Axeman","Scout","Paladin","Teutonic Knight","Ram","Catapult","Chief","Settler"],
+  gaul:     ["Phalanx","Swordsman","Pathfinder","Theutates Thunder","Druidrider","Haeduan","Ram","Trebuchet","Chieftain","Settler"],
+  egyptian: ["Slave Militia","Ash Warden","Khopesh Warrior","Sopdu Explorer","Anhur Guard","Resheph Chariot","Ram","Stone Catapult","Nomarch","Settler"],
+  hun:      ["Mercenary","Bowman","Spotter","Steppe Rider","Marksman","Marauder","Ram","Catapult","Logades","Settler"],
+  spartan:  ["Hoplite","Sensor","Shieldsman","Twinsteel Therion","Elpida Rider","Corinthian Crusher","Ram","Catapult","Ephor","Settler"],
+};
+
+function troopName(tribe, idx) {
+  const arr = (LANG === "en" ? TRIBES_EN[tribe] : TRIBES[tribe]) || TRIBES.roman;
+  return arr[idx - 1] || ((LANG === "en" ? "Unit " : "Юнит ") + idx);
+}
+
+// <option> для селекта выбора юнита: value = индекс, текст = имя
+function troopOptions(tribe, selected) {
+  let html = "";
+  for (let i = 1; i <= 10; i++) {
+    html += `<option value="${i}" ${Number(selected) === i ? "selected" : ""}>${i} — ${esc(troopName(tribe, i))}</option>`;
+  }
+  return html;
+}
+
+// При смене племени перерисовываем подписи во всех селектах и чеклисте юнитов
+function onTribeChange(sel) {
+  const card = sel.closest(".card");
+  const tribe = sel.value;
+  // Очередь тренировки
+  card.querySelectorAll(".troop-select").forEach(ts => {
+    ts.innerHTML = troopOptions(tribe, ts.value);
+  });
+  // Чеклист фарм-юнитов: сохраняем отмеченные индексы, перерисовываем имена
+  card.querySelectorAll("[data-farm-troop-list]").forEach(list => {
+    const checked = new Set([...list.querySelectorAll(".farm-troop-cb:checked")].map(cb => Number(cb.value)));
+    list.innerHTML = "";
+    for (let i = 1; i <= 10; i++) {
+      const label = document.createElement("label");
+      label.className = "farm-troop-item";
+      label.innerHTML = `<input type="checkbox" class="farm-troop-cb" value="${i}" ${checked.has(i) ? "checked" : ""}>`
+        + `<span>${i} — ${esc(troopName(tribe, i))}</span>`;
+      list.appendChild(label);
+    }
+  });
+}
+
+// Глобальные параметры тренировки (типы юнитов вынесены в ��чередь ниже)
+  const TRAIN_FIELDS = [
+  ["max_batch",        "Макс. за заказ, шт (0 = без лимита)", 5],
+  ["spend_pct",        "Тратить не ��олее, % ресурсов", 5],
+  ["min_queue_size",   "Не тренировать если в очереди >= шт (0 = выкл)", 1],
+  ];
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function fieldHtml(section, key, label, step, value) {
+  return `<div class="field"><label>${label}</label>
+    <input data-section="${section}" data-key="${key}" type="number" step="${step}" value="${value ?? ""}"></div>`;
+}
+
+// --- Очередь тренировки: строки {юнит, до шт, здание} ---
+function queueRowHtml(row, tribe) {
+  row = row || {};
+  tribe = tribe || "roman";
+  const t = row.troop_type_index ?? 1;
+  const c = row.target_count ?? 0;
+  const b = row.building === "stable" ? "stable" : "barracks";
+  return `<div class="queue-row" data-queue-row>
+    <select class="q-troop troop-select" title="Юнит">${troopOptions(tribe, t)}</select>
+    <input class="q-count" type="number" min="0" step="1" value="${c}" title="Тренировать до, шт" placeholder="до шт">
+    <select class="q-building" title="Здание">
+      <option value="barracks" ${b !== "stable" ? "selected" : ""}>Казарма</option>
+      <option value="stable" ${b === "stable" ? "selected" : ""}>Конюшня</option>
+    </select>
+    <button type="button" class="q-del" onclick="removeQueueRow(this)" title="Удалить из очереди">×</button>
+  </div>`;
+}
+
+function switchQueueTab(btn, key) {
+  const section = btn.closest(".section");
+  // Переключаем активную кнопку вкладки
+  section.querySelectorAll(".q-tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  // Показываем нужную панель, скрываем остальные
+  section.querySelectorAll("[data-queue-panel]").forEach(p => p.classList.add("hidden"));
+  const panel = section.querySelector(`[data-queue-panel="${CSS.escape(key)}"]`);
+  if (panel) panel.classList.remove("hidden");
+  // Показываем только кнопку «+ Добавить» нужной панели
+  section.querySelectorAll("[data-for-panel]").forEach(b => b.classList.add("hidden"));
+  const addBtn = section.querySelector(`[data-for-panel="${CSS.escape(key)}"]`);
+  if (addBtn) addBtn.classList.remove("hidden");
+}
+
+function addQueueRow(btn) {
+  const card = btn.closest(".card");
+  const tribeSel = card.querySelector('[data-key="tribe"]');
+  const tribe = (tribeSel && tribeSel.value) || "roman";
+  // Находим панель, к которой относится эта кнопка
+  const panelKey = btn.dataset.forPanel;
+  const box = panelKey
+    ? btn.closest(".section").querySelector(`[data-queue-panel="${CSS.escape(panelKey)}"]`)
+    : btn.closest(".section").querySelector("[data-queue]");
+  if (!box) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = queueRowHtml({ troop_type_index: 1, target_count: 0, building: "barracks" }, tribe);
+  box.appendChild(tmp.firstElementChild);
+}
+
+  function removeQueueRow(btn) {
+  const box = btn.closest("[data-queue]");
+  const rowEl = btn.closest("[data-queue-row]");
+  if (box.querySelectorAll("[data-queue-row]").length <= 1) {
+  // последнюю стро��у не удаляем, просто обнуляем цель
+  rowEl.querySelector(".q-count").value = 0;
+  return;
+  }
+  rowEl.remove();
+  }
+
+  // --- Очередь улучшений кузницы: строки {юнит, уровень, приоритет} ---
+  function upgradeRowHtml(row, tribe) {
+    row = row || {};
+    tribe = tribe || "roman";
+    const t  = row.troop_type_index ?? 1;
+    const lv = row.target_level     ?? 1;
+    const pr = row.priority         ?? 1;
+    return `<div class="upg-row" data-upg-row>
+      <select class="upg-troop troop-select" title="${LANG==="en"?"Unit":"Юнит"}">${troopOptions(tribe, t)}</select>
+      <div class="upg-level-wrap">
+        <label class="upg-lbl">${LANG==="en"?"Up to lvl":"До ур."}</label>
+        <input class="upg-level" type="number" min="1" max="20" step="1" value="${lv}" title="${LANG==="en"?"Target level (1-20)":"Целевой уровень (1-20)"}">
+      </div>
+      <div class="upg-priority-wrap">
+        <label class="upg-lbl">${LANG==="en"?"Priority":"Приоритет"}</label>
+        <input class="upg-priority" type="number" min="1" max="99" step="1" value="${pr}" title="${LANG==="en"?"1 = highest priority":"1 = высший приоритет"}">
+      </div>
+      <button type="button" class="q-del" onclick="removeUpgradeRow(this)" title="${LANG==="en"?"Remove":"Удалить"}">x</button>
+    </div>`;
+  }
+
+  function removeUpgradeRow(btn) {
+    const box = btn.closest("[data-upg-list]");
+    const rowEl = btn.closest("[data-upg-row]");
+    if (!box || box.querySelectorAll("[data-upg-row]").length <= 1) {
+      // последнюю не удаляем — просто сбрасываем поля
+      if (rowEl) {
+        const lvl = rowEl.querySelector(".upg-level");
+        const pr  = rowEl.querySelector(".upg-priority");
+        if (lvl) lvl.value = 1;
+        if (pr)  pr.value  = 1;
+      }
+      return;
+    }
+    rowEl.remove();
+  }
+
+  function addUpgradeRow(btn) {
+    const card = btn.closest(".card");
+    const tribeSel = card.querySelector('[data-key="tribe"]');
+    const tribe = (tribeSel && tribeSel.value) || "roman";
+    const box = btn.closest(".section").querySelector("[data-upg-list]");
+    if (!box) return;
+    // Приоритет = макс. + 1
+    const existing = [...box.querySelectorAll(".upg-priority")];
+    const maxPr = existing.reduce((m, el) => Math.max(m, Number(el.value)||0), 0);
+    const tmp = document.createElement("div");
+    tmp.innerHTML = upgradeRowHtml({ troop_type_index: 1, target_level: 1, priority: maxPr + 1, enabled: true }, tribe);
+    box.appendChild(tmp.firstElementChild);
+  }
+
+  // --- Переброска ресурсов: строки {из деревни → X|Y, ресурсы, резерв} ---
+  function transferRowHtml(r, villNames) {
+  r = r || {};
+  const names = villNames || [];
+  const from = r.from || "";
+  const opts = names.slice();
+  if (from && !opts.includes(from)) opts.unshift(from);  // не терять сохранённое имя
+  const sel = opts.length
+    ? `<select class="tr-from" title="${(LANG==="en")?"From village":"Из деревни"}">${opts.map(n => `<option value="${esc(n)}" ${n===from?"selected":""}>${esc(n)}</option>`).join("")}</select>`
+    : `<input class="tr-from" placeholder="${(LANG==="en")?"From village":"Из деревни"}" value="${esc(from)}">`;
+  const res = r.res || [];
+  const chk = k => res.includes(k) ? "checked" : "";
+  const RL = (LANG==="en") ? {wood:"Wd",clay:"Cl",iron:"Ir",crop:"Cr"} : {wood:"Дер",clay:"Гл",iron:"Жел",crop:"Зер"};
+  return `<div class="transfer-row" data-transfer-row>
+    ${sel}
+    <span class="tr-arrow">→</span>
+    <input class="tr-x" type="number" step="1" placeholder="X" value="${r.to_x ?? ""}" title="X цели">
+    <input class="tr-y" type="number" step="1" placeholder="Y" value="${r.to_y ?? ""}" title="Y цели">
+    <label class="tr-res"><input type="checkbox" class="tr-wood" ${chk("wood")}>${RL.wood}</label>
+    <label class="tr-res"><input type="checkbox" class="tr-clay" ${chk("clay")}>${RL.clay}</label>
+    <label class="tr-res"><input type="checkbox" class="tr-iron" ${chk("iron")}>${RL.iron}</label>
+    <label class="tr-res"><input type="checkbox" class="tr-crop" ${chk("crop")}>${RL.crop}</label>
+    <input class="tr-reserve" type="number" min="0" step="100" placeholder="${(LANG==="en")?"Reserve":"Резерв"}" value="${r.reserve ?? 0}" title="${(LANG==="en")?"Keep in donor village":"Оставить в деревне-доноре"}">
+    <button type="button" class="q-del" onclick="removeTransferRow(this)" title="${(LANG==="en")?"Remove rule":"Удалить правило"}">×</button>
+  </div>`;
+  }
+
+  function addTransferRow(btn) {
+  const box = btn.closest(".section").querySelector("[data-transfer]");
+  let names = [];
+  try { names = JSON.parse(box.dataset.villages || "[]"); } catch (e) {}
+  const tmp = document.createElement("div");
+  tmp.innerHTML = transferRowHtml({ res: ["wood","clay","iron"], reserve: 0 }, names);
+  box.appendChild(tmp.firstElementChild);
+  }
+
+  function removeTransferRow(btn) {
+  btn.closest("[data-transfer-row]").remove();
+  }
+
+  const RES_LABELS = (LANG === "en")
+    ? { wood: "Wood", clay: "Clay", iron: "Iron", crop: "Crop" }
+    : { wood: "Дерево", clay: "Глина", iron: "Железо", crop: "Зерно" };
+
+function fmtNum(n) { return (n ?? 0).toLocaleString("ru-RU"); }
+
+// выбранная подвкладка деревни по каждому аккаунту (переживает перерисовку)
+const selectedVillage = {};
+
+function selectVillage(accName, idx) {
+  selectedVillage[accName] = idx;
+  const card = document.querySelector(`[data-account="${accName}"]`);
+  if (card && lastAccounts) {
+    const acc = lastAccounts.find(a => a.name === accName);
+    if (acc) card.querySelector("[data-stats]").innerHTML = renderStats(acc.stats, accName);
+  }
+}
+
+function renderResBlock(r) {
+  const st = r.storage || {}, pr = r.production || {}, cap = r.capacity || {};
+  if (!Object.keys(st).length) return `<p class="stat-empty">нет данных</p>`;
+  let html = Object.keys(RES_LABELS).map(k => {
+    const cur = st[k] ?? 0, mx = cap[k] || 0, p = pr[k] ?? 0;
+    const pct = mx ? Math.min(100, Math.round(cur / mx * 100)) : 0;
+    const barCls = pct >= 95 ? "full" : pct >= 80 ? "warn" : "";
+    const prodCls = p > 0 ? "pos" : p < 0 ? "neg" : "";
+    return `<div class="res-row"><span>${RES_LABELS[k]}</span>
+        <span>${fmtNum(cur)}${mx ? " / " + fmtNum(mx) : ""} <span class="prod ${prodCls}">${p >= 0 ? "+" : ""}${fmtNum(p)}${LANG === "en" ? "/h" : "/ч"}</span></span></div>
+      <div class="res-bar"><i class="${barCls}" style="width:${pct}%"></i></div>`;
+  }).join("");
+  // Свободное зерно (прокорм): если 0 или меньше — постройки заблокированы
+  if (r.free_crop !== undefined && r.free_crop !== null) {
+    const fc = r.free_crop;
+    const fcCls = fc <= 0 ? "neg" : fc < 10 ? "warn-text" : "pos";
+    html += `<div class="res-row" style="margin-top:6px;border-top:1px solid var(--border,#333);padding-top:6px">
+        <span>${t("Свободное зерно")}</span>
+        <span class="prod ${fcCls}"><b>${fmtNum(fc)}</b></span></div>`;
+  }
+  return html;
+}
+
+function renderTroopsBlock(troops) {
+  return (troops || []).length
+    ? troops.map(r => `<div class="troop-row"><span>${esc(t(r.name || r.unit))}</span><b>${fmtNum(r.count)}</b></div>`).join("")
+    : `<p class="stat-empty">${t("нет войск в деревне")}</p>`;
+}
+
+function fmtDuration(sec) {
+  if (sec == null || isNaN(sec) || sec < 0) return "";
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = n => String(n).padStart(2, "0");
+  return (h > 0 ? h + (LANG === "en" ? "h " : "ч ") : "") + pad(m) + ":" + pad(s);
+}
+
+function renderBuildQueueBlock(queue) {
+  if (!queue || !queue.length) return `<p class="stat-empty">${t("очередь пуста")}</p>`;
+  return queue.map(b => {
+    // target_level — конечный уровень постройки (не "с X до Y", а просто "до Y")
+    const lvl = b.target_level != null ? `${LANG === "en" ? " to lvl " : " до ур. "}${b.target_level}` : "";
+    const time = b.seconds != null ? fmtDuration(b.seconds) : (b.timer || "");
+    return `<div class="res-row"><span>${esc(t(b.name || "?"))}${lvl}</span>
+        <span class="prod">${esc(time)}</span></div>`;
+  }).join("");
+}
+
+function renderSmithyBlock(items) {
+  if (!items || !items.length) return `<p class="stat-empty">${t("ничего не улучшается")}</p>`;
+  return items.map(it => {
+    // название: имя из игры без хвоста "Уровень N"/"Level N" (иначе дублируется)
+    let name = it.name ? it.name.replace(/[ ]*(Уровень|Level)[ ]*[0-9]+.*$/i, "").trim() : "";
+    name = name ? t(name) : "";
+    if (!name) name = it.troop_index ? `${t("Юнит")} t${it.troop_index}` : `${t("Юнит")} #${it.unit_id ?? "?"}`;
+    const lvl  = it.level != null ? `${LANG === "en" ? " to level " : " до уровня "}${it.level}` : "";
+    const time = it.seconds != null ? fmtDuration(it.seconds) : (it.timer || "");
+    return `<div class="res-row"><span>${esc(name)}${lvl}</span>
+        <span class="prod">${esc(time)}</span></div>`;
+  }).join("");
+}
+
+function renderAccountBlock(a) {
+  if (!a || !Object.keys(a).length) return `<p class="stat-empty">${t("нет данных")}</p>`;
+  let rows = "";
+  if (a.gold != null)   rows += `<div class="res-row"><span>${t("Золото")}</span><b>${fmtNum(a.gold)}</b></div>`;
+  if (a.silver != null) rows += `<div class="res-row"><span>${t("Серебро")}</span><b>${fmtNum(a.silver)}</b></div>`;
+  const premCls = a.premium ? "pos" : "neg";
+  rows += `<div class="res-row"><span>Travian Plus</span>
+      <span class="prod ${premCls}"><b>${a.premium ? t("активен") : t("нет")}</b></span></div>`;
+  if (a.gold_club != null) {
+    rows += `<div class="res-row"><span>${t("Золотой клуб")}</span>
+        <span class="prod ${a.gold_club ? "pos" : "neg"}"><b>${a.gold_club ? t("активен") : t("нет")}</b></span></div>`;
+  }
+  if (a.beginner_protection) {
+    const bpTime = a.beginner_protection_seconds != null
+      ? fmtDuration(a.beginner_protection_seconds)
+      : (a.beginner_protection_text || t("активна"));
+    rows += `<div class="res-row"><span>${t("Защита новичка")}</span>
+        <span class="prod pos"><b>${esc(bpTime)}</b></span></div>`;
+  } else {
+    rows += `<div class="res-row"><span>${t("Защита новичка")}</span>
+        <span class="prod neg"><b>${t("закончилась")}</b></span></div>`;
+  }
+  // Прочие строки из инфобокса (таймеры бустов/подписки), если они есть
+  if (Array.isArray(a.infobox)) {
+    a.infobox.forEach(it => {
+      if (!it.label && !it.timer) return;
+      // пропускаем защиту новичка — уже показали выше
+      if (/(новичк|защит|beginner|protection|schutz)/i.test(it.label || "")) return;
+      const time = it.seconds != null ? fmtDuration(it.seconds) : (it.timer || "");
+      if (!time) return;
+      rows += `<div class="res-row"><span>${esc(t(it.label) || "—")}</span>
+          <span class="prod">${esc(time)}</span></div>`;
+    });
+  }
+  return rows;
+}
+
+function renderStats(stats, accName) {
+  if (!stats || !stats.updated_at) {
+    return `<div class="stats-panel"><h3>${t("Статистика")}</h3>
+      <p class="stat-empty">${t("Пока нет данных — появятся после первого сбора (~30 сек после старта бота).")}</p></div>`;
+  }
+
+  // --- деревни: подвкладки (если несколько) ---
+  const villages = (stats.villages || []).length
+    ? stats.villages
+    : [{ name: t("Деревня"), resources: stats.resources || {}, troops: stats.troops || [] }];
+  let idx = selectedVillage[accName] ?? 0;
+  if (idx >= villages.length) idx = 0;
+  const v = villages[idx];
+
+  const tabsHtml = villages.length > 1
+    ? `<div class="village-tabs">` + villages.map((vv, i) =>
+        `<button class="village-tab ${i === idx ? "active" : ""}"
+                 onclick="selectVillage('${esc(accName)}', ${i})">${esc(t(vv.name) || (LANG === "en" ? "Village " : "Деревня ") + (i + 1))}</button>`
+      ).join("") + `</div>`
+    : "";
+
+  const resHtml = renderResBlock(v.resources || {});
+  const troopsHtml = renderTroopsBlock(v.troops);
+  const buildHtml = renderBuildQueueBlock(v.build_queue);
+  const smithyHtml = renderSmithyBlock(stats.smithy);
+  const accountHtml = renderAccountBlock(stats.account || {});
+
+  // --- герой ---
+  const h = stats.hero || {};
+  let heroHtml;
+  if (h.health != null || h.level != null) {
+    const hp = h.health ?? 0;
+    const hpCls = hp <= 25 ? "low" : hp <= 60 ? "mid" : "";
+    heroHtml = `
+      <div class="hero-line"><span>HP</span><b>${hp}%</b></div>
+      <div class="hero-hp-bar"><i class="${hpCls}" style="width:${hp}%"></i></div>
+      <div class="hero-line"><span>Уровень</span><b>${h.level ?? "?"}</b></div>
+      ${h.experience != null ? `<div class="hero-line"><span>Опыт</span><b>${fmtNum(h.experience)}</b></div>` : ""}
+      ${h.status ? `<div class="hero-line"><span>Статус</span><span>${esc(t(h.status))}</span></div>` : ""}`;
+  } else {
+    heroHtml = `<p class="stat-empty">${t("нет данных о герое")}</p>`;
+  }
+
+  // --- атаки ---
+  const attacks = stats.attacks || [];
+  const attacksHtml = attacks.length
+    ? attacks.map(a => LANG === "en"
+        ? `<div class="attack-alert">ATTACK! ${a.count > 1 ? "x" + a.count + " " : ""}from (${a.from_x}|${a.from_y}) — arrival in ${esc(a.arrival)}</div>`
+        : `<div class="attack-alert">АТАКА! ${a.count > 1 ? "x" + a.count + " " : ""}из (${a.from_x}|${a.from_y}) — прибытие через ${esc(a.arrival)}</div>`).join("")
+    : `<p class="no-attacks">${t("Атак нет")}</p>`;
+
+  const updated = new Date(stats.updated_at).toLocaleTimeString(LANG === "en" ? "en-GB" : "ru-RU");
+  return `
+  <div class="stats-panel">
+    <h3>${t("Статистика")} <small>${LANG === "en" ? "updated" : "обновлено"} ${updated}</small></h3>
+    ${tabsHtml}
+    <div class="stats-grid">
+      <div class="stat-block"><h4>${t("Ресурсы")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${resHtml}</div>
+      <div class="stat-block"><h4>${t("Строительство")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${buildHtml}</div>
+      <div class="stat-block"><h4>${t("Кузница")}</h4>${smithyHtml}</div>
+      <div class="stat-block"><h4>${t("Войска в деревне")}</h4>${troopsHtml}</div>
+      <div class="stat-block"><h4>${t("Герой")}</h4>${heroHtml}</div>
+      <div class="stat-block"><h4>${t("Аккаунт")}</h4>${accountHtml}</div>
+      <div class="stat-block"><h4>${t("Входящие атаки")}</h4>${attacksHtml}</div>
+    </div>
+  </div>`;
+}
+
+function renderAccount(acc) {
+  const s = acc.settings, f = s.features || {};
+  const toggles = FEATURES.map(([key, label, hint]) => `
+    <div class="toggle">
+      <label for="t-${acc.name}-${key}">${label}<small>${hint}</small></label>
+      <span class="switch">
+        <input type="checkbox" id="t-${acc.name}-${key}" data-feature="${key}" ${f[key] ? "checked" : ""}
+               onchange="toggleFeature('${esc(acc.name)}', this)">
+        <span class="slider" onclick="this.previousElementSibling.click()"></span>
+      </span>
+    </div>`).join("");
+
+  const farmFields  = FARM_FIELDS.map(([k, l, st]) => fieldHtml("farm", k, l, st, (s.farm||{})[k])).join("");
+
+  // Племя аккаунта — определяет имена юнитов в выпа��ающих списках
+  const tribe = (s.farm||{}).tribe || "roman";
+  const tribeSel = `<div class="field"><label>Племя</label>
+    <select data-section="farm" data-key="tribe" onchange="onTribeChange(this)">
+      ${Object.keys(TRIBE_LABELS).map(t => `<option value="${t}" ${tribe === t ? "selected" : ""}>${TRIBE_LABELS[t]}</option>`).join("")}
+    </select></div>`;
+  // Юниты д��я фарма — чеклист (farm_troop_indices).
+  // Фолбэк: если список пуст, отмечаем старый troop_type_index.
+  const _savedIndices = Array.isArray((s.farm||{}).farm_troop_indices) && (s.farm||{}).farm_troop_indices.length
+    ? (s.farm||{}).farm_troop_indices.map(Number)
+    : [Number((s.farm||{}).troop_type_index ?? 1)];
+  let farmTroopChecklist = `<div class="field farm-troop-field">
+    <label>${t("Юниты для фарма")}</label>
+    <div class="farm-troop-list" data-farm-troop-list>`;
+  for (let i = 1; i <= 10; i++) {
+    const checked = _savedIndices.includes(i) ? "checked" : "";
+    const name = troopName(tribe, i);
+    farmTroopChecklist += `<label class="farm-troop-item">
+      <input type="checkbox" class="farm-troop-cb" value="${i}" ${checked}>
+      <span>${i} — ${esc(name)}</span></label>`;
+  }
+  farmTroopChecklist += `</div></div>`;
+
+  // Поля цели эвазии — хранятся как farm.evade_target = {x, y}
+  const ev = (s.farm||{}).evade_target || {};
+  const evadeFields = `
+    <div class="field evade-coord">
+      <label>Цель эвазии X <small>пусто — ближайший оазис</small></label>
+      <input data-section="farm" data-key="evade_target_x" type="number" step="1" value="${ev.x ?? ""}" placeholder="—">
+    </div>
+    <div class="field evade-coord">
+      <label>Цель эвазии Y</label>
+      <input data-section="farm" data-key="evade_target_y" type="number" step="1" value="${ev.y ?? ""}" placeholder="—">
+    </div>`;
+
+  const trainFields = TRAIN_FIELDS.map(([k, l, st]) => fieldHtml("training", k, l, st, (s.training||{})[k])).join("");
+
+  // Очередь тренировки с вкладками деревень.
+  // Вкладки: «Все деревни» (ключ "*") + по одной на каждую деревню из статистики.
+  // Активная вкладка при рендере — первая.
+  const tr = s.training || {};
+  const villageQueues = (tr.village_queues && typeof tr.village_queues === "object") ? tr.village_queues : {};
+
+  // Фолбэк для глобальной очереди (ключ "*")
+  const globalQ = (Array.isArray(tr.queue) && tr.queue.length)
+    ? tr.queue
+    : [{ troop_type_index: tr.troop_type_index ?? 1, target_count: tr.target_count ?? 0, building: tr.building || "barracks" }];
+
+  // statsVills нужен и для вкладок тренировки и для планов застройки
+  const statsVills = ((acc.stats && acc.stats.villages) || []);
+
+  // Список вкладок: [{ key, label }]
+  const qTabs = [{ key: "*", label: LANG === "en" ? "All villages" : "Все деревни" }]
+    .concat(statsVills.map(v => ({ key: v.name || String(v.id), label: v.name || String(v.id) })));
+
+  // Рендерим панель вкладок + одна панель-очередь на каждую вкладку
+  const queueTabBtns = qTabs.map((tab, i) =>
+    `<button type="button" class="q-tab-btn ${i===0?"active":""}"
+       onclick="switchQueueTab(this,'${esc(tab.key)}')" data-tab-key="${esc(tab.key)}">${esc(tab.label)}</button>`
+  ).join("");
+
+  const queuePanels = qTabs.map((tab, i) => {
+    const qRows = tab.key === "*"
+      ? globalQ
+      : (Array.isArray(villageQueues[tab.key]) && villageQueues[tab.key].length
+          ? villageQueues[tab.key]
+          : [{ troop_type_index: 1, target_count: 0, building: "barracks" }]);
+    return `<div class="queue-panel ${i===0?"":"hidden"}" data-queue data-queue-panel="${esc(tab.key)}">
+      <div class="queue-head"><span>${LANG==="en"?"Unit":"Юнит"}</span><span>${LANG==="en"?"Target":"До шт"}</span><span>${LANG==="en"?"Building":"Здание"}</span><span></span></div>
+      ${qRows.map(r => queueRowHtml(r, tribe)).join("")}
+    </div>
+    <button type="button" class="btn-add-queue ${i===0?"":"hidden"}" onclick="addQueueRow(this)" data-for-panel="${esc(tab.key)}">+ ${LANG==="en"?"Add unit":"Добавить юнит"}</button>`;
+  }).join("");
+
+  const queueEditor = `
+    <div class="q-tabs" data-queue-tabs>${queueTabBtns}</div>
+    ${queuePanels}`;
+
+  const npcField = fieldHtml("trade", "npc_threshold_pct", "Порог NPC-обмена, %", 5, (s.trade||{}).npc_threshold_pct);
+
+  // Переброска ресурсов между деревнями: имена деревень — из статистики аккаунта
+  const villNames = ((acc.stats && acc.stats.villages) || []).map(v => v.name).filter(Boolean);
+  const tRules = Array.isArray((s.trade||{}).transfer_rules) ? (s.trade||{}).transfer_rules : [];
+  const transferInterval = fieldHtml("trade", "transfer_interval_min", "Интервал переброски, мин", 5, (s.trade||{}).transfer_interval_min);
+  const transferEditor = `
+    <div class="transfer-editor" data-transfer data-villages='${esc(JSON.stringify(villNames))}'>
+      ${tRules.map(r => transferRowHtml(r, villNames)).join("")}
+    </div>
+    <button type="button" class="btn-add-queue" onclick="addTransferRow(this)">+ Добавить правило</button>`;
+
+  // --- Шаблоны планов застройки для деревень ---
+  const PLAN_TEMPLATES = [
+    { id: "x1",       label: t("Стандарт x1"),      desc: t("Экономика, поля 5+5, Резиденция.") },
+    { id: "x3",       label: t("Non-raid x3/x5"),    desc: t("Герой в ресурсы, поля до 3, Ратуша → 2я деревня. По гайду Tikiii971.") },
+    { id: "gauls_x1", label: t("Галлы x1 (Caim)"),  desc: t("3 Party Farming: Гром, Ратуша, Резиденция 10, поселенцы.") },
+    { id: "farmer",   label: t("Фармер"),             desc: t("Упор на поля и склады. Минимум зданий.") },
+    { id: "capital",  label: t("Столица"),            desc: t("Дворец, Ратуша, поля 10+10.") },
+    { id: "offense",  label: t("Оффник"),             desc: t("Казармы / конюшня 20 ур. Максимум войск.") },
+    { id: "defense",  label: t("Дефер"),              desc: t("Казармы / конюшня + стена 20 ур.") },
+    { id: "none",     label: t("Без плана"),          desc: t("Не строить ничего в этой деревне.") },
+  ];
+
+  const savedVillPlans = (s.build || {}).village_plans || {};
+  // Если деревень ещё нет в статистике — показываем хотя бы строку «*» (все деревни)
+  const planVills = statsVills.length
+    ? statsVills.map(v => ({ key: v.name || v.id || "*", label: v.name || v.id || "*" }))
+    : [{ key: "*", label: LANG === "en" ? "All villages" : "Все деревни" }];
+
+  const templateOpts = PLAN_TEMPLATES.map(tp =>
+    `<option value="${esc(tp.id)}">${esc(tp.label)}</option>`
+  ).join("");
+
+  const villPlanRows = planVills.map(v => {
+    const cur = savedVillPlans[v.key] || "";
+    return `<div class="vill-plan-row" data-vill-plan-row>
+      <span class="vill-plan-name" title="${esc(v.key)}">${esc(v.label)}</span>
+      <select class="vill-plan-sel" data-vill-key="${esc(v.key)}">
+        <option value="">${LANG === "en" ? "— use global plan —" : "— глобальный план —"}</option>
+        ${PLAN_TEMPLATES.map(tp =>
+          `<option value="${esc(tp.id)}" ${cur === tp.id ? "selected" : ""}
+            title="${esc(tp.desc)}">${esc(tp.label)}</option>`
+        ).join("")}
+      </select>
+    </div>`;
+  }).join("");
+
+  const villPlansEditor = `
+  <h4 class="sub-head">${t("Шаблон застройки по деревням")}</h4>
+  <p class="sub-hint">${t("Выбери стратегию для каждой деревни. Бот применит нужный план при следующем запуске стройки.")}</p>
+  <div class="vill-plan-editor" data-vill-plans>${villPlanRows}</div>`;
+
+  // --- Редактор очереди улучшений кузницы ---
+  const smithySettings  = s.smithy || {};
+  const upgradeQueueRaw = Array.isArray(smithySettings.upgrade_queue) ? smithySettings.upgrade_queue : [];
+  // Если очередь пуста — показываем одну пустую строку
+  const upgradeRows = (upgradeQueueRaw.length
+    ? upgradeQueueRaw
+    : [{ troop_type_index: 1, target_level: 1, priority: 1, enabled: true }]
+  ).map(r => upgradeRowHtml(r, tribe)).join("");
+
+  const upgradeEditor = `
+    <p class="sub-hint">${t("Каждый юнит: укажи целевой уровень (1-20) и приоритет (1 = первым). Бот улучшает по одному за раз, начиная с наименьшего приоритета.")}</p>
+    <div class="upg-head">
+      <span>${t("Юнит")}</span>
+      <span>${t("До уровня")}</span>
+      <span>${t("Приоритет")}</span>
+      <span></span>
+    </div>
+    <div class="upg-list" data-upg-list>${upgradeRows}</div>
+    <button type="button" class="btn-add-queue" onclick="addUpgradeRow(this)">+ ${t("Добавить юнит")}</button>`;
+
+  // --- Редактор порядка задач (drag & drop) ---
+  // Берём сохранённый порядок, отбрасываем неизвестные ключи и дописываем
+  // недостающие задачи в конец (в дефолтном порядке).
+  const savedOrderRaw = ((s.task_order || {}).order) || [];
+  const knownKeys = new Set(TASK_ORDER_DEFAULT);
+  let taskOrder = savedOrderRaw.filter(k => knownKeys.has(k));
+  TASK_ORDER_DEFAULT.forEach(k => { if (!taskOrder.includes(k)) taskOrder.push(k); });
+  const metaByKey = Object.fromEntries(TASK_ORDER_META.map(m => [m[0], m]));
+  const taskOrderRows = taskOrder.map((key, i) => {
+    const m = metaByKey[key] || [key, key, ""];
+    return `<div class="task-order-item" draggable="true" data-task-key="${esc(key)}">
+      <span class="drag-handle" aria-hidden="true">⠿</span>
+      <span class="order-num" data-order-num>${i + 1}</span>
+      <span class="task-label">${esc(m[1])}<div class="task-hint">${esc(m[2])}</div></span>
+    </div>`;
+  }).join("");
+  // Заблокированный блок срочных задач (не перетаскивается)
+  const urgentRows = TASK_URGENT_META.map(m =>
+    `<div class="task-order-item locked" data-task-key="${esc(m[0])}">
+      <span class="drag-handle" aria-hidden="true">⠿</span>
+      <span class="order-num">★</span>
+      <span class="task-label">${esc(m[1])}<div class="task-hint">${esc(m[2])}</div></span>
+      <span class="urgent-badge">${t("срочно")}</span>
+    </div>`).join("");
+
+  // Модальное окно с настройкой порядка — открывается отдельной кнопкой
+  const taskOrderModal = `
+    <div class="modal-backdrop" data-order-modal onclick="if(event.target===this)closeTaskOrderModal(this)">
+      <div class="modal-panel">
+        <div class="modal-head">
+          <h3>${t("Порядок выполнения задач")}</h3>
+          <button type="button" class="modal-close" onclick="closeTaskOrderModal(this)" aria-label="${t("Закрыть")}">×</button>
+        </div>
+        <p class="sub-hint">${t("Срочные задачи выполняются немедленно по событию и всегда важнее остальных.")}</p>
+        <div class="task-order-list">${urgentRows}</div>
+        <h4 class="sub-head">${t("Обычные задачи — перетащи, чтобы задать порядок")}</h4>
+        <p class="sub-hint">${t("Задача выше в списке запускается раньше, когда несколько готовы одновременно.")}</p>
+        <div class="task-order-list" data-task-order>${taskOrderRows}</div>
+        <div class="modal-actions">
+          <button class="save" onclick="saveTaskOrder('${esc(acc.name)}', this)">${t("Сохранить порядок")}</button>
+          <span class="modal-saved-msg" data-order-saved>${t("Сохранено")}</span>
+        </div>
+      </div>
+    </div>`;
+
+  const running = acc.running;
+  const runBtn = running
+    ? `<button class="btn-stop" onclick="controlAccount('${esc(acc.name)}','stop',this)">Стоп</button>`
+    : `<button class="btn-start" onclick="controlAccount('${esc(acc.name)}','start',this)">Старт</button>`;
+  const scanBtn = running
+    ? `<button class="btn-scan" onclick="scanMap('${esc(acc.name)}',this)" title="Полный скан всего радиуса вокруг деревни">Полный скан</button>`
+      + `<button class="btn-scan" onclick="rescanMap('${esc(acc.name)}',this)" title="Быстрый перескан только известных оазисов">Перескан</button>`
+      + `<button class="btn-farm" onclick="forceFarm('${esc(acc.name)}',this)" title="${t("Сбросить счётчик и сразу отправить войска на оазисы")}">${t("Атака войсками")}</button>`
+    : ``;
+  const resetBuildBtn = `<button class="btn-reset-build" onclick="resetBuild('${esc(acc.name)}',this)" title="Сбросить прогресс стройки на шаг 1 — бот начнёт план заново">Сброс стройки</button>`;
+  const exportBtn = `<button class="btn-scan" onclick="exportSettings('${esc(acc.name)}')" title="Скачать настройки аккаунта в JSON">Экспорт</button>`;
+  const importBtn = `<button class="btn-scan" onclick="importSettings('${esc(acc.name)}')" title="Загрузить настройки аккаунта из JSON">Импорт</button>`;
+  const orderBtn = `<button class="btn-order" onclick="openTaskOrderModal(this)" title="${t("Настроить порядок выполнения задач")}">⇅ ${t("Порядок задач")}</button>`;
+  const delBtn = acc.from_yaml
+    ? `<span class="badge" title="Задан в config.yaml">yaml</span>`
+    : `<button class="btn-del" onclick="deleteAccount('${esc(acc.name)}')" title="Удалить аккаунт">удалить</button>`;
+
+  return `
+  <section class="card" data-account="${esc(acc.name)}">
+    <div class="card-head">
+      <div class="acc-name"><span class="dot ${running ? "on" : "off"}" data-dot></span>${esc(acc.name)}</div>
+      <div class="server">${esc(acc.server)} · x${esc(acc.rate)} · ${esc(acc.email || t("логин в .env"))}</div>
+      <div class="run-controls" data-controls>${runBtn}${scanBtn}${orderBtn}${resetBuildBtn}${exportBtn}${importBtn}${delBtn}</div>
+    </div>
+    ${taskOrderModal}
+    <p class="last-action" data-status>${statusHtml(acc)}</p>
+    <div data-stats>${renderStats(acc.stats, acc.name)}</div>
+    <div class="sections">
+      <div class="section"><h3>Модули (вкл/выкл на лету)</h3><div class="toggles">${toggles}</div></div>
+      <div>
+        <div class="section" style="margin-bottom:14px"><h3>Фарм</h3><div class="fields">${tribeSel}${farmTroopChecklist}${farmFields}${evadeFields}</div></div>
+        <div class="section" style="margin-bottom:14px"><h3>Тренировка</h3><div class="fields">${trainFields}</div>${queueEditor}</div>
+        <div class="section" style="margin-bottom:14px"><h3>${t("Улучшение (Кузница)")}</h3>${upgradeEditor}</div>
+        <div class="section" style="margin-bottom:14px"><h3>${t("Стройка")}</h3>${villPlansEditor}</div>
+        <div class="section"><h3>Торговля</h3><div class="fields">${npcField}${transferInterval}</div>
+          <h4 class="sub-head">Переброска между деревнями</h4>
+          <p class="sub-hint">Излишки из деревни-дон��ра уходят на координаты цели. Резерв — сколько оставить в доноре.</p>
+          ${transferEditor}</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="save" onclick="saveAccount('${esc(acc.name)}', this)">Сохранить настройки</button>
+      <span class="saved-msg">Сохранено — бот применит на следующей задаче</span>
+      <a class="logs-link" href="/account/${esc(acc.name)}/logs?lang=${LANG}" target="_blank">Открыть логи →</a>
+    </div>
+  </section>`;
+}
+
+// --- Перетаскивание задач (drag & drop), делегирование на document ---
+// Работает даже после перерисовки карточек (renderAccount).
+function renumberTaskOrder(list) {
+  if (!list) return;
+  [...list.querySelectorAll(".task-order-item")].forEach((el, i) => {
+    const n = el.querySelector("[data-order-num]");
+    if (n) n.textContent = i + 1;
+  });
+}
+(function initTaskOrderDnD() {
+  let dragEl = null;
+  document.addEventListener("dragstart", e => {
+    const item = e.target.closest(".task-order-item");
+    if (!item || item.classList.contains("locked")) return;  // срочные не д��игаем
+    dragEl = item;
+    item.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", item.dataset.taskKey || ""); } catch (_) {}
+  });
+  document.addEventListener("dragover", e => {
+    const list = e.target.closest("[data-task-order]");
+    if (!list || !dragEl || !list.contains(dragEl)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const over = e.target.closest(".task-order-item");
+    if (!over || over === dragEl) return;
+    const rect = over.getBoundingClientRect();
+    const after = (e.clientY - rect.top) > rect.height / 2;
+    // элемен��ы над курсором сдвигаются, освобождая место для перетаскиваемого
+    over.parentNode.insertBefore(dragEl, after ? over.nextSibling : over);
+    renumberTaskOrder(list);
+  });
+  document.addEventListener("drop", e => {
+    if (e.target.closest("[data-task-order]") && dragEl) e.preventDefault();
+  });
+  document.addEventListener("dragend", () => {
+    if (dragEl) {
+      dragEl.classList.remove("dragging");
+      renumberTaskOrder(dragEl.closest("[data-task-order]"));
+    }
+    dragEl = null;
+  });
+})();
+
+// --- Модалка порядка задач ---
+function openTaskOrderModal(btn) {
+  const card = btn.closest(".card");
+  const modal = card && card.querySelector("[data-order-modal]");
+  if (modal) modal.classList.add("open");
+}
+function closeTaskOrderModal(el) {
+  const modal = el.closest("[data-order-modal]") || el;
+  modal.classList.remove("open");
+}
+// Esc закрывает открытую модалку
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    document.querySelectorAll("[data-order-modal].open").forEach(m => m.classList.remove("open"));
+  }
+});
+
+async function saveTaskOrder(name, btn) {
+  const modal = btn.closest("[data-order-modal]");
+  const order = [];
+  modal.querySelectorAll("[data-task-order] .task-order-item").forEach(el => {
+    if (el.dataset.taskKey) order.push(el.dataset.taskKey);
+  });
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`/api/accounts/${name}/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_order: { order } }),
+    });
+    if (!resp.ok) {
+      alert((await resp.json()).detail || t("Ошибка сохранения"));
+      return;
+    }
+    const msg = modal.querySelector("[data-order-saved]");
+    if (msg) { msg.classList.add("show"); setTimeout(() => msg.classList.remove("show"), 2000); }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function controlAccount(name, action, btn) {
+  btn.disabled = true;
+  const resp = await fetch(`/api/accounts/${name}/${action}`, { method: "POST" });
+  if (!resp.ok) {
+    alert((await resp.json()).detail || t("Ошибка"));
+    btn.disabled = false;
+    return;
+  }
+  rendered = false;   // перерисовать карточки (кнопка старт<->стоп)
+  await refresh();
+}
+
+async function _sendScan(name, btn, endpoint) {
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = t("Команда отправлена...");
+  try {
+    const resp = await fetch(`/api/accounts/${name}/${endpoint}`, { method: "POST" });
+    if (!resp.ok) { alert((await resp.json()).detail || t("Ошибка")); return; }
+    btn.textContent = t("В очереди");
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+  } catch (e) {
+    alert("Ошибка: " + e.message);
+    btn.textContent = orig; btn.disabled = false;
+  }
+}
+
+function scanMap(name, btn)   { return _sendScan(name, btn, "scan"); }
+function rescanMap(name, btn) { return _sendScan(name, btn, "rescan"); }
+function forceFarm(name, btn) { return _sendScan(name, btn, "force_farm"); }
+
+async function resetBuild(name, btn) {
+  const q = (LANG === "en")
+    ? `Reset build progress for "${name}" to step 1?\nThe bot will run the plan again from the very beginning.`
+    : `Сбросить прогресс стройки для "${name}" на шаг 1?\nБот начнё�� выполнять план заново с самого начала.`;
+  if (!confirm(q)) return;
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = t("Сброс...");
+  try {
+    const r = await fetch(`/api/accounts/${encodeURIComponent(name)}/reset_build`, { method: "POST" });
+    if (!r.ok) { alert((await r.json()).detail || t("Ошибка")); return; }
+    btn.textContent = t("Сброшено");
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+  } catch (e) {
+    alert("Ошибка: " + e.message);
+    btn.textContent = orig; btn.disabled = false;
+  }
+}
+
+async function deleteAccount(name) {
+  const q = (LANG === "en")
+    ? `Delete account "${name}"? Cookies and settings will remain on disk.`
+    : `Удалить аккаунт "${name}"? Куки и настройки останутся на диске.`;
+  if (!confirm(q)) return;
+  const resp = await fetch(`/api/accounts/${name}`, { method: "DELETE" });
+  if (!resp.ok) { alert((await resp.json()).detail || t("Ошибка")); return; }
+  rendered = false;
+  await refresh();
+}
+
+async function addAccount(btn) {
+  const data = {
+    name:           document.getElementById("new-name").value.trim(),
+    server:         document.getElementById("new-server").value.trim(),
+    email:          document.getElementById("new-email").value.trim(),
+    password:       document.getElementById("new-password").value,
+    build_template: document.getElementById("new-build-template").value,
+    rate:           document.getElementById("new-rate").value,
+    headless:       document.getElementById("new-headless").value === "true",
+    proxy:          document.getElementById("new-proxy").value.trim(),
+  };
+  if (!data.name || !data.server) { alert(LANG === "en" ? "Name and server are required" : "Имя и сервер обязательны"); return; }
+  btn.disabled = true;
+  const resp = await fetch("/api/accounts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  btn.disabled = false;
+  if (!resp.ok) { alert((await resp.json()).detail || t("Ошибка")); return; }
+  ["new-name","new-server","new-email","new-password","new-proxy"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("new-build-template").value = "x3";
+  rendered = false;
+  await refresh();
+}
+
+async function loadServers(btn) {
+  btn.disabled = true; btn.textContent = t("Загрузка...");
+  try {
+    const data = await (await fetch("/api/servers")).json();
+    const dl = document.getElementById("server-list");
+    dl.innerHTML = data.servers.map(s => `<option value="${esc(s)}">`).join("");
+    const found = (LANG === "en") ? `Found: ${data.servers.length}` : `Найдено: ${data.servers.length}`;
+    const none  = (LANG === "en") ? "Not found — type manually" : "Не найдено — впиши вручную";
+    btn.textContent = data.servers.length ? found : none;
+  } catch { btn.textContent = t("Ошибка"); }
+  btn.disabled = false;
+  setTimeout(() => btn.textContent = t("Список серверов"), 4000);
+}
+
+async function checkServer() {
+  const host = document.getElementById("new-server").value.trim();
+  const out = document.getElementById("server-check");
+  if (!host) { out.textContent = t("Впиши адрес сервера"); out.className = "check-result bad"; return; }
+  out.textContent = t("Проверяю..."); out.className = "check-result";
+  const data = await (await fetch(`/api/servers/check?host=${encodeURIComponent(host)}`)).json();
+  if (data.ok) { out.textContent = t("Сервер отвечает, это Travian"); out.className = "check-result ok"; }
+  else {
+    const bad = (LANG === "en") ? "Does not look like a working server: " : "Не похоже на рабочий сервер: ";
+    out.textContent = bad + (data.error || `HTTP ${data.status_code}`); out.className = "check-result bad";
+  }
+}
+
+async function toggleFeature(name, el) {
+  // Тумблер применяется МГНОВЕННО — без кнопки "Сохранить настройки"
+  const updates = { features: { [el.dataset.feature]: el.checked } };
+  const resp = await fetch(`/api/accounts/${name}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  const card = el.closest(".card");
+  const msg = card.querySelector(".saved-msg");
+  if (resp.ok) {
+    msg.textContent = t("Применено — бот увидит перед следующей задачей");
+    msg.classList.add("show");
+    setTimeout(() => msg.classList.remove("show"), 3000);
+  } else {
+    el.checked = !el.checked;  // откат при ошибке
+    const p = (LANG === "en") ? "Save error: " : "Ошибка сохранения: ";
+    alert(p + (await resp.text()));
+  }
+}
+
+async function saveAccount(name, btn) {
+  const card = btn.closest(".card");
+  const updates = { features: {}, farm: {}, training: {}, trade: {} };
+  card.querySelectorAll("[data-feature]").forEach(el => {
+    updates.features[el.dataset.feature] = el.checked;
+  });
+  card.querySelectorAll("[data-section]").forEach(el => {
+  const sec = el.dataset.section, key = el.dataset.key;
+  let v;
+  if (el.type === "checkbox") { v = el.checked; }
+  else {
+    v = el.value;
+    if (el.type === "number") { v = v === "" ? null : Number(v); }
+    // селект выбора юнита хранит индекс — сохраняем числом, не строкой
+    else if (key === "troop_type_index") { v = v === "" ? null : Number(v); }
+  }
+  if (v !== null) updates[sec][key] = v;
+  });
+  // Собираем farm_troop_indices из чеклиста (отмеченны�� чекбоксы)
+  const farmTroopCbs = card.querySelectorAll("[data-farm-troop-list] .farm-troop-cb:checked");
+  updates.farm.farm_troop_indices = [...farmTroopCbs].map(cb => Number(cb.value));
+  // Синхронизируем legacy troop_type_index с первым выбранным юнитом
+  if (updates.farm.farm_troop_indices.length) {
+    updates.farm.troop_type_index = updates.farm.farm_troop_indices[0];
+  }
+  // Собираем шаблоны застройки по деревням
+  // Собираем очередь улучшений кузницы
+  updates.smithy = { upgrade_queue: [] };
+  card.querySelectorAll("[data-upg-row]").forEach((row, idx) => {
+    const ti = Number(row.querySelector(".upg-troop").value)    || 1;
+    const lv = Number(row.querySelector(".upg-level").value)    || 1;
+    const pr = Number(row.querySelector(".upg-priority").value) || (idx + 1);
+    updates.smithy.upgrade_queue.push({
+      troop_type_index: ti,
+      target_level:     Math.min(20, Math.max(1, lv)),
+      priority:         Math.max(1, pr),
+      enabled:          true,
+    });
+  });
+
+  updates.build = { village_plans: {} };
+  card.querySelectorAll("[data-vill-plan-row] .vill-plan-sel").forEach(sel => {
+    const vkey = sel.dataset.villKey;
+    if (vkey && sel.value) updates.build.village_plans[vkey] = sel.value;
+  });
+  // Объединяем evade_target_x/y -> farm.evade_target = {x, y}
+  const ex = updates.farm.evade_target_x, ey = updates.farm.evade_target_y;
+  delete updates.farm.evade_target_x; delete updates.farm.evade_target_y;
+  if (ex !== undefined || ey !== undefined) {
+    updates.farm.evade_target = { x: ex ?? null, y: ey ?? null };
+  }
+  // Собираем очереди тренировки по вкладкам
+  // Вкладка "*" → updates.training.queue (глобальная, обратная совместимость)
+  // Остальные вкладки → updates.training.village_queues[villageName]
+  const village_queues = {};
+  card.querySelectorAll("[data-queue-panel]").forEach(panel => {
+    const key = panel.dataset.queuePanel;
+    const rows = [];
+    panel.querySelectorAll("[data-queue-row]").forEach(row => {
+      const ti = Number(row.querySelector(".q-troop").value) || 1;
+      const cRaw = row.querySelector(".q-count").value;
+      const c = cRaw === "" ? 0 : Number(cRaw);
+      const b = row.querySelector(".q-building").value === "stable" ? "stable" : "barracks";
+      if (c > 0) rows.push({ troop_type_index: ti, target_count: c, building: b });
+    });
+    if (key === "*") {
+      updates.training.queue = rows;
+    } else {
+      village_queues[key] = rows;
+    }
+  });
+  updates.training.village_queues = village_queues;
+  // Если панель "*" не нашлась (старый DOM) — пустой массив
+  if (!("queue" in updates.training)) updates.training.queue = [];
+  // Собираем правила переброски ресурсов (пропускаем неполные строки)
+  const trRules = [];
+  card.querySelectorAll("[data-transfer-row]").forEach(row => {
+    const from = (row.querySelector(".tr-from").value || "").trim();
+    const xr = row.querySelector(".tr-x").value;
+    const yr = row.querySelector(".tr-y").value;
+    if (from === "" || xr === "" || yr === "") return;
+    const res = [];
+    if (row.querySelector(".tr-wood").checked) res.push("wood");
+    if (row.querySelector(".tr-clay").checked) res.push("clay");
+    if (row.querySelector(".tr-iron").checked) res.push("iron");
+    if (row.querySelector(".tr-crop").checked) res.push("crop");
+    if (!res.length) return;
+    const reserve = Number(row.querySelector(".tr-reserve").value) || 0;
+    trRules.push({ from, to_x: Number(xr), to_y: Number(yr), res, reserve });
+  });
+  updates.trade.transfer_rules = trRules;
+  // Собираем порядок задач из перетаскиваемого списка
+  updates.task_order = { order: [] };
+  card.querySelectorAll("[data-task-order] .task-order-item").forEach(el => {
+    const k = el.dataset.taskKey;
+    if (k) updates.task_order.order.push(k);
+  });
+  const resp = await fetch(`/api/accounts/${name}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  const msg = card.querySelector(".saved-msg");
+  if (resp.ok) {
+    msg.classList.add("show");
+    setTimeout(() => msg.classList.remove("show"), 3000);
+  } else {
+    const p = (LANG === "en") ? "Save error: " : "Ошибка сохранения: ";
+    alert(p + (await resp.text()));
+  }
+}
+
+let rendered = false;
+let lastAccounts = null;   // последние данные с сервера (нужны подвкладкам деревень)
+async function refresh() {
+  try {
+    const accounts = await (await fetch("/api/accounts")).json();
+    lastAccounts = accounts;
+    const root = document.getElementById("accounts");
+    if (!rendered) {
+      root.innerHTML = accounts.length
+        ? accounts.map(renderAccount).join("")
+        : '<p class="empty">Нет аккаунтов — добавь ниже</p>';
+      rendered = true;
+    } else {
+      accounts.forEach(acc => {
+        const card = document.querySelector(`[data-account="${acc.name}"]`);
+        if (!card) { rendered = false; return; }
+        card.querySelector("[data-dot]").className = "dot " + (acc.running ? "on" : "off");
+        card.querySelector("[data-status]").innerHTML = statusHtml(acc);
+        // статистика обновляется без перерисовки н��строек (не сбивает ввод)
+        const statsEl = card.querySelector("[data-stats]");
+        if (statsEl) statsEl.innerHTML = renderStats(acc.stats, acc.name);
+        // если состояние запуска сменилось извне — перерисуем кнопки
+        const hasStop = !!card.querySelector(".btn-stop");
+        if (hasStop !== acc.running) rendered = false;
+      });
+      if (!rendered) { root.innerHTML = accounts.map(renderAccount).join(""); rendered = true; }
+    }
+    applyLang();   // перевести свежий/обновлённый контент, если выбран EN
+  } catch (e) { console.error(e); }
+}
+// подпись кнопки-переключателя: показываем ЯЗЫК, НА который переключим
+const _lt = document.getElementById("lang-toggle");
+if (_lt) _lt.textContent = (LANG === "en") ? "RU" : "EN";
+// примечание о пароле (интерполирует плейсхолдеры — переводим отдельно)
+const _fn = document.getElementById("form-note");
+if (_fn && LANG === "en") {
+  _fn.textContent = "The password is stored in accounts_gui.json next to the bot. Safer — leave the field empty "
+    + "and set it in .env: TRAVIAN_EMAIL_NAME / TRAVIAN_PASSWORD_NAME (account name in uppercase). "
+    + "Accounts from config.yaml are also shown here; their login/password are edited in the file.";
+}
+applyLang();       // перевести статичную разметку (шапка, форма) сразу
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
