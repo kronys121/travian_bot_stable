@@ -1,0 +1,105 @@
+{
+  "villages": [
+    {
+      "id": null,
+      "name": "Деревня Samopal",
+      "resources": {
+        "storage": {
+          "wood": 5070,
+          "clay": 6140,
+          "iron": 5059,
+          "crop": 4051
+        },
+        "production": {
+          "wood": 1635,
+          "clay": 1635,
+          "iron": 1410,
+          "crop": 1150
+        },
+        "capacity": {
+          "wood": 11800,
+          "clay": 11800,
+          "iron": 11800,
+          "crop": 9600
+        },
+        "free_crop": 259
+      },
+      "troops": [
+        {
+          "unit": "",
+          "name": "Герой",
+          "count": 1
+        }
+      ],
+      "build_queue": [
+        {
+          "name": "Резиденция",
+          "target_level": 9,
+          "seconds": 239,
+          "timer": "0:03:59"
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "storage": {
+      "wood": 5070,
+      "clay": 6140,
+      "iron": 5059,
+      "crop": 4051
+    },
+    "production": {
+      "wood": 1635,
+      "clay": 1635,
+      "iron": 1410,
+      "crop": 1150
+    },
+    "capacity": {
+      "wood": 11800,
+      "clay": 11800,
+      "iron": 11800,
+      "crop": 9600
+    },
+    "free_crop": 259
+  },
+  "troops": [
+    {
+      "unit": "",
+      "name": "Герой",
+      "count": 1
+    }
+  ],
+  "build_queue": [
+    {
+      "name": "Резиденция",
+      "target_level": 9,
+      "seconds": 239,
+      "timer": "0:03:59"
+    }
+  ],
+  "hero": {
+    "health": 63,
+    "level": 9,
+    "experience": 2440,
+    "experience_pct": 38
+  },
+  "account": {
+    "gold": 25,
+    "silver": 2156,
+    "premium": true,
+    "gold_club": false,
+    "infobox": [
+      {
+        "label": "Вы будете находиться под защитой еще ч.",
+        "seconds": 168973,
+        "timer": "46:56:13",
+        "cls": "infoType_23 firstElement active unreaded"
+      }
+    ],
+    "beginner_protection": true,
+    "beginner_protection_seconds": 168973
+  },
+  "attacks": [],
+  "updated_at": "2026-07-17T23:19:44.884874",
+  "smithy": []
+}

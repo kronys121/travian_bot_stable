@@ -1,0 +1,98 @@
+# config.yaml — единый конфиг всего бота
+#
+# ВАЖНО: config.yaml задаёт только СТАРТОВЫЕ значения.
+# После первого запуска создаётся bot_settings_{name}.json —
+# он редактируется из GUI (app.py) и применяется В РЕАЛЬНОМ ВРЕМЕНИ.
+#
+# АККАУНТЫ И СЕРВЕРЫ:
+#   Аккаунты можно задавать ЗДЕСЬ (accounts:) или добавлять через GUI —
+#   те сохраняются в accounts_gui.json и мержатся с этим списком.
+#   Каждый аккаунт = свой сервер + свой логин/пароль + свои куки.
+#   Запуск: все сразу `python runner.py`, или по одному из GUI (Старт/Стоп),
+#   или `python runner.py --account acc2` — процессы полностью независимы.
+#
+# ЛОГИН/ПАРОЛЬ (приоритет):
+#   1. поля email/password у аккаунта (тут или в GUI)
+#   2. .env: TRAVIAN_EMAIL_ACC1 / TRAVIAN_PASSWORD_ACC1 (имя заглавными)
+#   3. .env: TRAVIAN_EMAIL / TRAVIAN_PASSWORD (общие, если аккаунт один)
+#
+# ⚠️ БЕЗОПАСНОСТЬ: telegram_token засветился в переписке/файлах —
+# отзови его через @BotFather (/revoke) и лучше вынеси в .env:
+#   TELEGRAM_TOKEN=...
+#   TELEGRAM_CHAT_ID=...
+
+#accounts:
+#  - name: acc1
+#    attack_check_interval: 40      # FIX: было "ttack_check_interval" — значение игнорировалось
+#    server: ts4.x1.international.travian.com
+#    email:
+#    password:
+#    rate: 3
+#    cookies: cookies_acc1.json
+#    headless: false
+#    telegram_token: ""             # ⚠️ старый токен отозвать! Задай новый тут или в .env
+#    telegram_chat_id: "374536635"
+#    sleep_hours: [2, 8]
+#    evasion_enabled: true
+#
+#    # ── настройки фарма (стартовые; дальше — через GUI) ──
+#    farm:
+#      tribe: roman              # племя для имён юнитов в GUI:
+#                                # roman|teuton|gaul|egyptian|hun|spartan.
+#                                # На логику не влияет — бот работает по индексам.
+#      troops_per_raid: 10
+#      troop_type_index: 4       # индекс юнита (1-10); в GUI выбирается по имени
+#      max_distance: 10.0        # 0 = без лимита
+#      scan_radius: 10
+#      interval_minutes: 60
+#      cooldown_minutes: 60
+#      troop_speed_tph: 0        # скорость войск, клеток/час (0 = выкл).
+#                                # >0 — кулдаун дальних оазисов растёт с учётом
+#                                # времени возврата войск (round-trip).
+#      max_animal_defense: 0     # терпимая защита животных для набега.
+#                                # Перед отправкой оазис перепроверяется; если
+#                                # животных больше — набег отменяется, цель
+#                                # остаётся в списке. 0 = отменять при любых.
+#
+#    # ── тренировка (по умолчанию ВЫКЛ — включается в GUI) ──
+#    training:
+#      enabled: false
+#      # Очередь: несколько типов войск по очереди, каждый со своей целью
+#      # и зданием. Если queue пуст — используется одиночный формат ниже.
+#      queue:
+#        - troop_type_index: 1
+#          target_count: 200
+#          building: barracks    # barracks | stable
+#        # - troop_type_index: 4
+#        #   target_count: 50
+#        #   building: stable
+#      # одиночный формат (фолбэк, если queue пуст):
+#      troop_type_index: 1
+#      target_count: 100         # тренировать до этого количества
+#      building: barracks        # barracks | stable
+#
+#    # ── торговля (по умолчанию ВЫКЛ — включается в GUI) ──
+#    trade:
+#      npc_enabled: false
+#      npc_threshold_pct: 85     # % заполнения склада для NPC-обмена
+
+  #- name: acc2
+  #  server: ts5.x1.international.travian.com
+  #  email: user2@mail.com
+  #  password: pass2
+  #  rate: 1
+  #  cookies: cookies_acc2.json
+  #  headless: true
+  #  sleep_hours: [0, 6]
+  #  center_x: 50
+  #  center_y: -30
+  #  farm:
+  #    troops_per_raid: 15
+  #    troop_type_index: 2
+  #    max_distance: 8.0
+  #    scan_radius: 5
+  #    cooldown_minutes: 90
+  #  training:
+  #    enabled: false
+  #  trade:
+  #    npc_enabled: false

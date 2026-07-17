@@ -1,0 +1,106 @@
+{
+  "features": {
+    "farm_enabled": true,
+    "hero_only": false,
+    "hero_with_troops": false,
+    "hero_farm_enabled": false,
+    "build_enabled": true,
+    "build_night_enabled": true,
+    "build_use_ads": true,
+    "tasks_enabled": true,
+    "adventure_enabled": true,
+    "adv_shorten_enabled": true,
+    "adv_difficulty_enabled": true,
+    "celebration_enabled": false,
+    "smithy_enabled": true,
+    "smithy_use_ads": true,
+    "train_enabled": true,
+    "npc_trade_enabled": false,
+    "transfer_enabled": false,
+    "evasion_enabled": false
+  },
+  "farm": {
+    "tribe": "gaul",
+    "troops_per_raid": 5,
+    "troop_type_index": 1,
+    "farm_troop_indices": [
+      1,
+      4,
+      5,
+      6
+    ],
+    "max_distance": 35,
+    "scan_radius": 25,
+    "interval_minutes": 60,
+    "cooldown_minutes": 60,
+    "troop_speed_tph": 0,
+    "max_animal_defense": 0
+  },
+  "training": {
+    "troop_type_index": 1,
+    "target_count": 100,
+    "building": "barracks",
+    "min_queue_size": 0,
+    "queue": [
+      {
+        "troop_type_index": 1,
+        "target_count": 200,
+        "building": "barracks"
+      },
+      {
+        "troop_type_index": 4,
+        "target_count": 100,
+        "building": "stable"
+      }
+    ],
+    "village_queues": {
+      "Деревня": [],
+      "Деревня Samopal": []
+    },
+    "max_batch": 7,
+    "spend_pct": 30
+  },
+  "smithy": {
+    "upgrade_queue": [
+      {
+        "troop_type_index": 1,
+        "target_level": 2,
+        "priority": 1,
+        "enabled": true
+      },
+      {
+        "troop_type_index": 4,
+        "target_level": 1,
+        "priority": 2,
+        "enabled": true
+      }
+    ]
+  },
+  "build": {
+    "village_plans": {
+      "*": "x3",
+      "Деревня Samopal": "none",
+      "Деревня": "x3"
+    }
+  },
+  "trade": {
+    "npc_threshold_pct": 85,
+    "transfer_interval_min": 60,
+    "transfer_rules": []
+  },
+  "task_order": {
+    "order": [
+      "stats",
+      "build",
+      "tasks",
+      "adventure",
+      "farm",
+      "hero_farm",
+      "train",
+      "celebration",
+      "smithy",
+      "npc_trade",
+      "transfer"
+    ]
+  }
+}

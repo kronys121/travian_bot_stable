@@ -1,0 +1,14 @@
+{
+  "accounts": [
+    {
+      "name": "Start",
+      "server": "ts31.x3.international.travian.com",
+      "email": "woor2009@bk.ru",
+      "password": "84ilibeg#D",
+      "rate": 3,
+      "headless": false,
+      "proxy": "",
+      "cookies": "cookies_Start.json"
+    }
+  ]
+}
