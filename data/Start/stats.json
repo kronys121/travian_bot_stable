@@ -2,19 +2,19 @@
   "villages": [
     {
       "id": null,
-      "name": "Деревня Samopal",
+      "name": "Деревня",
       "resources": {
         "storage": {
-          "wood": 5070,
-          "clay": 6140,
-          "iron": 5059,
-          "crop": 4051
+          "wood": 2389,
+          "clay": 2764,
+          "iron": 3390,
+          "crop": 3628
         },
         "production": {
           "wood": 1635,
           "clay": 1635,
           "iron": 1410,
-          "crop": 1150
+          "crop": 1145
         },
         "capacity": {
           "wood": 11800,
@@ -29,30 +29,38 @@
           "unit": "",
           "name": "Герой",
           "count": 1
+        },
+        {
+          "unit": "u21",
+          "name": "Фаланг",
+          "count": 9
+        },
+        {
+          "unit": "u24",
+          "name": "Тевтатских грома",
+          "count": 6
+        },
+        {
+          "unit": "u26",
+          "name": "Эдуйских конниц",
+          "count": 5
         }
       ],
-      "build_queue": [
-        {
-          "name": "Резиденция",
-          "target_level": 9,
-          "seconds": 239,
-          "timer": "0:03:59"
-        }
-      ]
+      "build_queue": []
     }
   ],
   "resources": {
     "storage": {
-      "wood": 5070,
-      "clay": 6140,
-      "iron": 5059,
-      "crop": 4051
+      "wood": 2389,
+      "clay": 2764,
+      "iron": 3390,
+      "crop": 3628
     },
     "production": {
       "wood": 1635,
       "clay": 1635,
       "iron": 1410,
-      "crop": 1150
+      "crop": 1145
     },
     "capacity": {
       "wood": 11800,
@@ -67,16 +75,24 @@
       "unit": "",
       "name": "Герой",
       "count": 1
-    }
-  ],
-  "build_queue": [
+    },
     {
-      "name": "Резиденция",
-      "target_level": 9,
-      "seconds": 239,
-      "timer": "0:03:59"
+      "unit": "u21",
+      "name": "Фаланг",
+      "count": 9
+    },
+    {
+      "unit": "u24",
+      "name": "Тевтатских грома",
+      "count": 6
+    },
+    {
+      "unit": "u26",
+      "name": "Эдуйских конниц",
+      "count": 5
     }
   ],
+  "build_queue": [],
   "hero": {
     "health": 63,
     "level": 9,
@@ -91,15 +107,15 @@
     "infobox": [
       {
         "label": "Вы будете находиться под защитой еще ч.",
-        "seconds": 168973,
-        "timer": "46:56:13",
+        "seconds": 168343,
+        "timer": "46:45:43",
         "cls": "infoType_23 firstElement active unreaded"
       }
     ],
     "beginner_protection": true,
-    "beginner_protection_seconds": 168973
+    "beginner_protection_seconds": 168343
   },
   "attacks": [],
-  "updated_at": "2026-07-17T23:19:44.884874",
+  "updated_at": "2026-07-17T23:27:47.807904",
   "smithy": []
 }
