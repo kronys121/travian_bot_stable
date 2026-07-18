@@ -303,6 +303,8 @@
   .stats-panel h3 small { text-transform: none; letter-spacing: 0; font-size: 11px; }
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
   .stat-block h4 { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+  .stat-block.wide { grid-column: span 2; }
+  @media (max-width: 560px) { .stat-block.wide { grid-column: span 1; } }
   .res-row { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; flex-wrap: wrap; }
   .res-row .resval { margin-left: auto; text-align: right; white-space: nowrap; }
   .res-row .prod { color: var(--muted); font-size: 11px; }
@@ -1288,7 +1290,7 @@ function renderStats(stats, accName) {
     <h3>${t("Статистика")} <small>${LANG === "en" ? "updated" : "обновлено"} ${updated}</small></h3>
     ${tabsHtml}
     <div class="stats-grid">
-      <div class="stat-block"><h4>${t("Ресурсы")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${resHtml}</div>
+      <div class="stat-block wide"><h4>${t("Ресурсы")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${resHtml}</div>
       <div class="stat-block"><h4>${t("Строительство")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${buildHtml}</div>
       <div class="stat-block"><h4>${t("Кузница")}</h4>${smithyHtml}</div>
       <div class="stat-block"><h4>${t("Войска в деревне")}</h4>${troopsHtml}</div>
