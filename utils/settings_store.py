@@ -25,6 +25,7 @@ DEFAULT_SETTINGS = {
         "npc_trade_enabled": False,   # по умолчанию ВЫКЛ — включается из GUI
         "transfer_enabled": False,    # переброска ресурсов между деревнями (ВЫКЛ)
         "reports_enabled": True,      # читать боевые отчёты (добыча/потери/профит)
+        "grouped_cycle": False,       # обход деревень «пачкой»: за один заход в деревню — все действия
         "evasion_enabled": True,
     },
     "farm": {
