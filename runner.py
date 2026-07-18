@@ -470,18 +470,22 @@ def run_bot(acc_config: dict):
         scheduler = Scheduler(logger)
         _captcha_until = [0.0]  # пауза после капчи
 
-        def _is_paused() -> bool:
-            if time.time() < _captcha_until[0]:
-                return True
-            if attack_monitor.is_night_time():
-                return True
-            return False
+        # Задачи, которые САМИ решают, работать ли в ночном окне (sleep_hours):
+        # стройка и кузница (по тумблеру build_night_enabled) и общий обход.
+        # Остальные ночью спят.
+        _NIGHT_OK_TASKS = ('build', 'smithy', 'village_round')
 
         def _guard(task_name, fn):
-            """Обёртка: ночной режим, капча, обновление кук, статус."""
+            """Обёртка: капча-пауза, ночной режим, обновление кук, статус."""
             def wrapped():
-                if _is_paused():
-                    logger.info(f"🌙/💤 [{task_name}] пропущена (ночь или пауза капчи).")
+                # Пауза после капчи — стоп для ВСЕХ задач.
+                if time.time() < _captcha_until[0]:
+                    logger.info(f"💤 [{task_name}] пропущена (пауза после капчи).")
+                    return
+                # Ночь (sleep_hours): спят все задачи, кроме тех, что умеют
+                # работать ночью сами (стройка/кузница при build_night_enabled).
+                if attack_monitor.is_night_time() and task_name not in _NIGHT_OK_TASKS:
+                    logger.info(f"🌙 [{task_name}] пропущена (ночной режим).")
                     return
                 write_status({'last_action': f'Выполняю: {task_name}', 'current_village': farm_manager.current_village_id})
                 try:
@@ -679,14 +683,26 @@ def run_bot(acc_config: dict):
             """
             smart_builder.use_ad_boost = store.feature('build_use_ads', True)
             npc_threshold = int(store.section('trade').get('npc_threshold_pct', 85))
+            night = attack_monitor.is_night_time()
             build_at_night = store.feature('build_night_enabled', False)
+
+            # Ночь и ночная стройка выключена — обход не нужен, спим до утра.
+            if night and not build_at_night:
+                wake = _seconds_until_morning() + random.randint(60, 600)
+                scheduler.set_next_run('village_round', wake)
+                logger.info("[village_round] Ночь — обход на паузе до утра.")
+                return
 
             def per_village(vk):
                 # 1) Стройка
-                if store.feature('build_enabled', True) and (not attack_monitor.is_night_time() or build_at_night):
+                if store.feature('build_enabled', True):
                     plan = menu_manager._get_build_plan_for_village(vk)
                     if plan:
                         smart_builder.execute_plan(plan, village_key=vk)
+                # Ночью (при включённой ночной стройке) — только стройка,
+                # остальные «активные» действия не делаем.
+                if night:
+                    return
                 # 2) Фарм войсками
                 if store.feature('farm_enabled', True):
                     farm_manager.run_farm_cycle()
