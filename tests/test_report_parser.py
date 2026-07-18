@@ -165,7 +165,6 @@ class TestReportList(unittest.TestCase):
 class TestReportDetail(unittest.TestCase):
     def setUp(self):
         self.d = parse_report_detail(DETAIL_HTML)
-
     def test_coords(self):
         self.assertEqual((self.d['x'], self.d['y']), (83, 36))
 
@@ -180,6 +179,57 @@ class TestReportDetail(unittest.TestCase):
         # отправлено 10 юнитов типа t1 (первая колонка), потерь нет
         self.assertEqual(self.d['sent'], {1: 10})
         self.assertEqual(self.d['dead'], {})
+        self.assertEqual(self.d['troop_index'], 1)
+
+
+# Второй реальный отчёт (id 12921718): полная сумка 350/350, иной расклад ресурсов.
+DETAIL_HTML_FULL = f"""
+<div id="reportWrapper">
+  <div class="header"><div class="headline"><div class="subject">
+    Деревня Samopal проводит набег на Свободный оазис {_coord(78, 41)}</div></div></div>
+  <div class="body">
+    <div class="role attacker">
+      <div class="header"><h2>Нападение</h2></div>
+      <table>
+        <tbody class="units"><tr><th class="coords"></th>
+          <td class="uniticon"><img class="unit u21" alt="Фаланга"></td>
+          <td class="uniticon last"><img class="unit uhero" alt="Герой"></td>
+        </tr></tbody>
+        {_unit_row("troopCount_small", [10,0,0,0,0,0,0,0,0,0,0])}
+        {_unit_row("troopDead_small",  [0,0,0,0,0,0,0,0,0,0,0])}
+      </table>
+      <table class="additionalInformation"><tbody class="infos"><tr>
+        <th>Добыча</th>
+        <td><div><div class="res"><div class="inlineIconList resourceWrapper">
+          <div class="inlineIcon resources"><i class="lumber"></i><span class="value ">35</span></div>
+          <div class="inlineIcon resources"><i class="clay"></i><span class="value ">141</span></div>
+          <div class="inlineIcon resources"><i class="iron"></i><span class="value ">35</span></div>
+          <div class="inlineIcon resources"><i class="crop"></i><span class="value ">139</span></div>
+        </div></div>
+        <div class="inlineIcon carry"><i class="carry full"></i><span class="value ">{LRO}{LRO}350{PDF}/{LRO}350{PDF}{PDF}</span></div></div></td>
+      </tr></tbody></table>
+    </div>
+  </div>
+</div>
+"""
+
+
+class TestReportDetailFullLoot(unittest.TestCase):
+    def setUp(self):
+        self.d = parse_report_detail(DETAIL_HTML_FULL)
+
+    def test_coords(self):
+        self.assertEqual((self.d['x'], self.d['y']), (78, 41))
+
+    def test_loot_breakdown(self):
+        self.assertEqual(self.d['loot'], {'lumber': 35, 'clay': 141, 'iron': 35, 'crop': 139})
+        self.assertEqual(self.d['looted_total'], 350)
+
+    def test_capacity_full(self):
+        self.assertEqual(self.d['capacity'], 350)
+
+    def test_troop_index(self):
+        self.assertEqual(self.d['sent'], {1: 10})
         self.assertEqual(self.d['troop_index'], 1)
 
 
