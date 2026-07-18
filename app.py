@@ -554,6 +554,21 @@ async def account_logs(name: str, lines: int = 150, lang: str = "ru"):
     return HTMLResponse(content=html)
 
 
+@app.get("/api/accounts/{name}/farm_stats")
+async def api_farm_stats(name: str):
+    """Сырая статистика фарма для страницы с графиками."""
+    if get_account(name) is None:
+        raise HTTPException(404, "Аккаунт не найден")
+    return JSONResponse(content=load_farm_stats(name))
+
+
+@app.get("/account/{name}/farm", response_class=HTMLResponse)
+async def account_farm(name: str):
+    """Страница с интерактивными графиками статистики фарма."""
+    html = (Path(__file__).parent / "static" / "farm.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html.replace("__ACCOUNT__", name))
+
+
 @app.on_event("shutdown")
 def shutdown_processes():
     """При остановке GUI гасим только процессы, запущенные из GUI."""

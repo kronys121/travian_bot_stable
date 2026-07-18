@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Фарм — __ACCOUNT__</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --card2: #1c2028; --border: #2a2f3a;
+    --text: #c9cfda; --muted: #7f8899; --accent: #e94560;
+    --wood: #6a9a5b; --clay: #c1662f; --iron: #8a8f98; --crop: #d9b23a;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+  a { color: var(--accent); text-decoration: none; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 10px; }
+  .top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .top .sub { color: var(--muted); font-size: 12px; }
+  .btn { display: inline-block; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); background: var(--card2); font-size: 12px; cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .card .k { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .card .v { font-size: 22px; font-weight: 700; }
+  .card .v.small { font-size: 16px; font-weight: 600; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  input[type=date], select { background: var(--card2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+  .chart-wrap { position: relative; height: 300px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  .warn { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>Фарм · <span id="accName"></span></h1>
+      <div class="sub" id="updated"></div>
+    </div>
+    <a class="btn" href="/">← Дашборд</a>
+    <button class="btn" id="reload">Обновить</button>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>Добыча и набеги по дням</h2>
+    <div class="filters">
+      <label>с <input type="date" id="from"></label>
+      <label>по <input type="date" id="to"></label>
+      <button class="btn" id="resetDates">Всё время</button>
+    </div>
+    <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>Добыча по ресурсам</h2>
+      <div class="chart-wrap"><canvas id="resChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Профит по войскам</h2>
+      <div class="chart-wrap"><canvas id="troopChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Оазисы по добыче</h2>
+    <div class="filters">
+      <label>показать <select id="topN">
+        <option value="10">топ 10</option>
+        <option value="15" selected>топ 15</option>
+        <option value="25">топ 25</option>
+        <option value="1000">все</option>
+      </select></label>
+      <label><input type="checkbox" id="hideEmpty" checked> скрыть пустые (0 добычи)</label>
+    </div>
+    <div class="chart-wrap" style="height:auto"><div id="oasesBox"></div></div>
+  </div>
+
+<script>
+const ACCOUNT = "__ACCOUNT__";
+const nf = new Intl.NumberFormat("ru-RU");
+const fmt = n => nf.format(Math.round(n || 0));
+const RES = [["lumber","Дерево","#6a9a5b"],["clay","Глина","#c1662f"],["iron","Железо","#8a8f98"],["crop","Зерно","#d9b23a"]];
+let DATA = null;
+let charts = {};
+
+async function load() {
+  const r = await fetch(`/api/accounts/${encodeURIComponent(ACCOUNT)}/farm_stats`);
+  DATA = await r.json();
+  render();
+}
+
+function dayKeys(from, to) {
+  const daily = DATA.daily || {};
+  let keys = Object.keys(daily).sort();
+  if (from) keys = keys.filter(k => k >= from);
+  if (to)   keys = keys.filter(k => k <= to);
+  return keys;
+}
+
+function render() {
+  document.getElementById("accName").textContent = ACCOUNT;
+  document.getElementById("updated").textContent = DATA.updated_at
+    ? "обновлено " + new Date(DATA.updated_at).toLocaleString("ru-RU") : "нет данных";
+
+  const tot = DATA.totals || {};
+  const oasesCount = DATA.oases ? Object.keys(DATA.oases).length : 0;
+  const avg = (tot.raids || 0) > 0 ? (tot.loot || 0) / tot.raids : 0;
+  const cards = [
+    ["Набегов", fmt(tot.raids)],
+    ["Награблено", fmt(tot.loot) + " 💰"],
+    ["Средн. за набег", fmt(avg)],
+    ["Юнитов отправлено", fmt(tot.units_sent)],
+    ["Юнитов потеряно", fmt(tot.lost)],
+    ["Оазисов фармится", fmt(oasesCount)],
+  ];
+  document.getElementById("cards").innerHTML = cards.map(([k, v]) =>
+    `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  // даты по умолчанию — весь диапазон
+  const allKeys = dayKeys();
+  if (allKeys.length && !document.getElementById("from").value) {
+    document.getElementById("from").value = allKeys[0];
+    document.getElementById("to").value = allKeys[allKeys.length - 1];
+  }
+
+  drawDaily();
+  drawRes();
+  drawTroops();
+  drawOases();
+}
+
+function baseOpts(extra) {
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: "#c9cfda" } } },
+    scales: {
+      x: { ticks: { color: "#7f8899" }, grid: { color: "#2a2f3a" } },
+      y: { ticks: { color: "#7f8899" }, grid: { color: "#2a2f3a" }, beginAtZero: true },
+    },
+  }, extra || {});
+}
+
+function drawDaily() {
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+  const keys = dayKeys(from, to);
+  const daily = DATA.daily || {};
+  const loot = keys.map(k => (daily[k] || {}).loot || 0);
+  const raids = keys.map(k => (daily[k] || {}).raids || 0);
+  charts.daily && charts.daily.destroy();
+  charts.daily = new Chart(document.getElementById("dailyChart"), {
+    data: {
+      labels: keys,
+      datasets: [
+        { type: "bar", label: "Добыча", data: loot, backgroundColor: "#e9456099", borderColor: "#e94560", yAxisID: "y" },
+        { type: "line", label: "Набеги", data: raids, borderColor: "#5aa9e9", backgroundColor: "#5aa9e9", tension: .3, yAxisID: "y1" },
+      ],
+    },
+    options: baseOpts({
+      scales: {
+        x: { ticks: { color: "#7f8899" }, grid: { color: "#2a2f3a" } },
+        y: { position: "left", ticks: { color: "#7f8899" }, grid: { color: "#2a2f3a" }, beginAtZero: true, title: { display: true, text: "Добыча", color: "#7f8899" } },
+        y1: { position: "right", ticks: { color: "#7f8899" }, grid: { drawOnChartArea: false }, beginAtZero: true, title: { display: true, text: "Набеги", color: "#7f8899" } },
+      },
+    }),
+  });
+}
+
+function drawRes() {
+  const lr = (DATA.totals || {}).loot_res || {};
+  const vals = RES.map(([k]) => lr[k] || 0);
+  charts.res && charts.res.destroy();
+  charts.res = new Chart(document.getElementById("resChart"), {
+    type: "doughnut",
+    data: { labels: RES.map(r => r[1]), datasets: [{ data: vals, backgroundColor: RES.map(r => r[2]), borderColor: "#171a21", borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right", labels: { color: "#c9cfda" } } } },
+  });
+}
+
+function drawTroops() {
+  const bt = DATA.by_troop || {};
+  const keys = Object.keys(bt).sort((a, b) => (bt[b].loot || 0) - (bt[a].loot || 0));
+  const loot = keys.map(k => bt[k].loot || 0);
+  const perUnit = keys.map(k => (bt[k].units || 0) > 0 ? (bt[k].loot || 0) / bt[k].units : 0);
+  charts.troop && charts.troop.destroy();
+  charts.troop = new Chart(document.getElementById("troopChart"), {
+    data: {
+      labels: keys.map(k => "t" + k),
+      datasets: [
+        { type: "bar", label: "Добыча", data: loot, backgroundColor: "#d9b23a99", borderColor: "#d9b23a", yAxisID: "y" },
+        { type: "bar", label: "Добыча / юнит", data: perUnit, backgroundColor: "#6a9a5b99", borderColor: "#6a9a5b", yAxisID: "y1" },
+      ],
+    },
+    options: baseOpts({
+      plugins: {
+        legend: { labels: { color: "#c9cfda" } },
+        tooltip: { callbacks: { afterBody: (items) => {
+          const k = keys[items[0].dataIndex]; const v = bt[k];
+          return `отправлено: ${fmt(v.units)}  потеряно: ${fmt(v.lost)}  набегов: ${fmt(v.raids)}`;
+        } } },
+      },
+      scales: {
+        x: { ticks: { color: "#7f8899" }, grid: { color: "#2a2f3a" } },
+        y: { position: "left", beginAtZero: true, ticks: { color: "#7f8899" }, grid: { color: "#2a2f3a" }, title: { display: true, text: "Добыча", color: "#7f8899" } },
+        y1: { position: "right", beginAtZero: true, ticks: { color: "#7f8899" }, grid: { drawOnChartArea: false }, title: { display: true, text: "На юнит", color: "#7f8899" } },
+      },
+    }),
+  });
+}
+
+function drawOases() {
+  const topN = parseInt(document.getElementById("topN").value, 10);
+  const hideEmpty = document.getElementById("hideEmpty").checked;
+  const oa = DATA.oases || {};
+  let rows = Object.keys(oa).map(k => ({ key: k, ...oa[k] }));
+  if (hideEmpty) rows = rows.filter(r => (r.loot || 0) > 0);
+  rows.sort((a, b) => (b.loot || 0) - (a.loot || 0));
+  const shown = rows.slice(0, topN);
+  const box = document.getElementById("oasesBox");
+  if (!shown.length) { box.innerHTML = `<div class="empty">Нет данных по оазисам.</div>`; return; }
+  const emptyCount = Object.keys(oa).filter(k => !(oa[k].loot > 0)).length;
+  box.innerHTML = `
+    <table>
+      <thead><tr><th>Оазис</th><th class="num">Добыча</th><th class="num">Набегов</th><th class="num">Добыча/набег</th><th class="num">Потери</th></tr></thead>
+      <tbody>${shown.map(r => `<tr>
+        <td>(${r.key})</td>
+        <td class="num">${fmt(r.loot)}</td>
+        <td class="num">${fmt(r.raids)}</td>
+        <td class="num">${fmt((r.raids || 0) > 0 ? (r.loot || 0) / r.raids : 0)}</td>
+        <td class="num ${r.lost ? "warn" : ""}">${fmt(r.lost)}</td>
+      </tr>`).join("")}</tbody>
+    </table>
+    ${emptyCount ? `<p class="sub" style="color:var(--muted);font-size:12px;margin-top:10px">Пустых оазисов (0 добычи): <b class="warn">${emptyCount}</b> — кандидаты на удаление из фарм-листа.</p>` : ""}`;
+}
+
+document.getElementById("reload").onclick = load;
+document.getElementById("from").onchange = drawDaily;
+document.getElementById("to").onchange = drawDaily;
+document.getElementById("resetDates").onclick = () => {
+  const k = dayKeys();
+  document.getElementById("from").value = k[0] || "";
+  document.getElementById("to").value = k[k.length - 1] || "";
+  drawDaily();
+};
+document.getElementById("topN").onchange = drawOases;
+document.getElementById("hideEmpty").onchange = drawOases;
+
+load().catch(e => {
+  document.getElementById("cards").innerHTML = `<div class="empty">Не удалось загрузить данные: ${e}</div>`;
+});
+</script>
+</body>
+</html>

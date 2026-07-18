@@ -325,6 +325,9 @@
   .village-tab.active { background: var(--ok); border-color: var(--ok); color: #10131a; font-weight: 600; }
   .no-attacks { color: var(--ok); font-size: 12px; }
   .stat-empty { color: var(--muted); font-size: 12px; }
+  .farm-detail-btn { display: inline-block; margin-top: 10px; padding: 5px 12px; border: 1px solid var(--accent);
+    border-radius: 6px; color: var(--accent); font-size: 12px; text-decoration: none; }
+  .farm-detail-btn:hover { background: rgba(233, 69, 96, 0.12); }
 
   /* --- форма добавления аккаунта --- */
   .add-card h2 { font-size: 15px; margin-bottom: 12px; }
@@ -1212,48 +1215,19 @@ function renderAccountBlock(a) {
   return rows;
 }
 
-function renderFarmBlock(farm) {
+function renderFarmBlock(farm, accName) {
+  const detail = `<a class="farm-detail-btn" href="/account/${encodeURIComponent(accName)}/farm">${t("Подробнее")} →</a>`;
   if (!farm || !farm.totals || !(farm.totals.raids || farm.totals.reports)) {
-    return `<p class="stat-empty">${t("Пока нет набегов")}</p>`;
+    return `<p class="stat-empty">${t("Пока нет набегов")}</p>${detail}`;
   }
   const tot = farm.totals || {};
   const oasesCount = farm.oases ? Object.keys(farm.oases).length : 0;
-  const d = new Date();
-  const ld = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const today = (farm.daily && farm.daily[ld]) || null;
-  const lootRes = tot.loot_res || {};
-  const resLine = (tot.loot || 0) > 0
-    ? `<div class="res-row"><span>${t("по ресурсам")}</span><span class="prod">🪵${fmtNum(lootRes.lumber || 0)} 🧱${fmtNum(lootRes.clay || 0)} ⚙️${fmtNum(lootRes.iron || 0)} 🌾${fmtNum(lootRes.crop || 0)}</span></div>`
-    : "";
-
-  // профит по типам войск: лут на один отправленный юнит; лучший помечаем
-  const byTroop = farm.by_troop || {};
-  const entries = Object.keys(byTroop).map(k => {
-    const v = byTroop[k];
-    const perUnit = (v.units || 0) > 0 ? (v.loot || 0) / v.units : 0;
-    return { k, units: v.units || 0, raids: v.raids || 0, loot: v.loot || 0, lost: v.lost || 0, perUnit };
-  });
-  let bestKey = null, bestPer = 0;
-  entries.forEach(e => { if (e.units > 0 && e.perUnit > bestPer) { bestPer = e.perUnit; bestKey = e.k; } });
-  const rows = entries
-    .sort((a, b) => b.loot - a.loot || b.units - a.units)
-    .map(e => {
-      const star = e.k === bestKey ? " ⭐" : "";
-      const per = e.units > 0 ? ` · ${e.perUnit.toFixed(1)}/${t("юн")}` : "";
-      const lost = e.lost ? ` · ☠${fmtNum(e.lost)}` : "";
-      return `<div class="res-row"><span>t${esc(e.k)}${star}</span>
-        <span class="prod">${fmtNum(e.loot)} 💰${per}${lost}</span></div>`;
-    }).join("");
-
   return `
-    <div class="hero-line"><span>${t("Набегов всего")}</span><b>${fmtNum(tot.raids || 0)}</b></div>
-    <div class="hero-line"><span>${t("Юнитов отправлено")}</span><b>${fmtNum(tot.units_sent || 0)}</b></div>
-    <div class="hero-line"><span>${t("Награблено всего")}</span><b>${fmtNum(tot.loot || 0)} 💰</b></div>
-    ${resLine}
+    <div class="hero-line"><span>${t("Набегов")}</span><b>${fmtNum(tot.raids || 0)}</b></div>
+    <div class="hero-line"><span>${t("Награблено")}</span><b>${fmtNum(tot.loot || 0)}</b></div>
     <div class="hero-line"><span>${t("Юнитов потеряно")}</span><b>${fmtNum(tot.lost || 0)}</b></div>
-    <div class="hero-line"><span>${t("Оазисов фармится")}</span><b>${fmtNum(oasesCount)}</b></div>
-    ${today ? `<div class="hero-line"><span>${t("Сегодня")}</span><b>${fmtNum(today.raids || 0)} ${t("наб.")}</b></div>` : ""}
-    ${rows ? `<div class="farm-bytroop">${rows}</div>` : ""}`;
+    <div class="hero-line"><span>${t("Оазисов")}</span><b>${fmtNum(oasesCount)}</b></div>
+    ${detail}`;
 }
 
 function renderStats(stats, accName) {
@@ -1317,7 +1291,7 @@ function renderStats(stats, accName) {
       <div class="stat-block"><h4>${t("Строительство")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${buildHtml}</div>
       <div class="stat-block"><h4>${t("Кузница")}</h4>${smithyHtml}</div>
       <div class="stat-block"><h4>${t("Войска в деревне")}</h4>${troopsHtml}</div>
-      <div class="stat-block"><h4>${t("Фарм")}</h4>${renderFarmBlock(stats.farm)}</div>
+      <div class="stat-block"><h4>${t("Фарм")}</h4>${renderFarmBlock(stats.farm, accName)}</div>
       <div class="stat-block"><h4>${t("Герой")}</h4>${heroHtml}</div>
       <div class="stat-block"><h4>${t("Аккаунт")}</h4>${accountHtml}</div>
       <div class="stat-block"><h4>${t("Входящие атаки")}</h4>${attacksHtml}</div>

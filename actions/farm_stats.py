@@ -127,6 +127,11 @@ class FarmStats:
             oa["loot"] = oa.get("loot", 0) + looted
             oa["lost"] = oa.get("lost", 0) + total_dead
 
+        # дневная добыча/потери (для графиков во времени)
+        day = d["daily"].setdefault(_today(), {"raids": 0, "units": 0})
+        day["loot"] = day.get("loot", 0) + looted
+        day["lost"] = day.get("lost", 0) + total_dead
+
         d["updated_at"] = _now()
 
     def set_last_report_id(self, report_id):
