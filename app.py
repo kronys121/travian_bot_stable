@@ -556,10 +556,15 @@ async def account_logs(name: str, lines: int = 150, lang: str = "ru"):
 
 @app.get("/api/accounts/{name}/farm_stats")
 async def api_farm_stats(name: str):
-    """Сырая статистика фарма для страницы с графиками."""
+    """Сырая статистика фарма для страницы с графиками (+ племя для имён юнитов)."""
     if get_account(name) is None:
         raise HTTPException(404, "Аккаунт не найден")
-    return JSONResponse(content=load_farm_stats(name))
+    data = load_farm_stats(name)
+    try:
+        data["tribe"] = get_store(name).section("farm").get("tribe", "roman")
+    except Exception:
+        data["tribe"] = "roman"
+    return JSONResponse(content=data)
 
 
 @app.get("/account/{name}/farm", response_class=HTMLResponse)

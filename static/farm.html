@@ -94,6 +94,22 @@ const ACCOUNT = "__ACCOUNT__";
 const nf = new Intl.NumberFormat("ru-RU");
 const fmt = n => nf.format(Math.round(n || 0));
 const RES = [["lumber","Дерево","#6a9a5b"],["clay","Глина","#c1662f"],["iron","Железо","#8a8f98"],["crop","Зерно","#d9b23a"]];
+// Названия войск по племени (индекс = позиция + 1; 11 = герой). Фолбэк,
+// если в отчёте имя ещё не встречалось.
+const TRIBES = {
+  roman:    ["Легионер","Преторианец","Империанец","Конный разведчик","Конница императора","Цезарис","Таран","Огненная катапульта","Сенатор","Поселенец"],
+  teuton:   ["Дубинщик","Копейщик","Топорщик","Скаут","Паладин","Тевтонская конница","Таран","Катапульта","Вождь","Поселенец"],
+  gaul:     ["Фаланга","Мечник","Следопыт","Тевтатский гром","Друид-всадник","Эдуйская конница","Таран","Катапульта","Вождь","Поселенец"],
+  egyptian: ["Раб-ополченец","Копейщик","Меченосец","Разведчик на верблюде","Колесница Хепри","Ре-конница","Таран","Катапульта","Номарх","Поселенец"],
+  hun:      ["Наёмник","Лучник","Конный разведчик","Степной всадник","Марсман","Всадник","Таран","Катапульта","Логадес","Поселенец"],
+  spartan:  ["Гоплит","Сеннон","Копейщик","Всадник Совета","Коринфский всадник","Всадник Тумана","Таран","Катапульта","Эфор","Поселенец"],
+};
+function unitName(idx) {
+  const n = Number(idx);
+  if (n === 11) return "Герой";
+  const arr = TRIBES[(DATA && DATA.tribe) || "roman"] || TRIBES.roman;
+  return arr[n - 1] || ("t" + idx);
+}
 let DATA = null;
 let charts = {};
 
@@ -196,7 +212,7 @@ function drawTroops() {
   const keys = Object.keys(bt).sort((a, b) => (bt[b].loot || 0) - (bt[a].loot || 0));
   const loot = keys.map(k => bt[k].loot || 0);
   const perUnit = keys.map(k => (bt[k].units || 0) > 0 ? (bt[k].loot || 0) / bt[k].units : 0);
-  const labels = keys.map(k => bt[k].name || ("t" + k));
+  const labels = keys.map(k => bt[k].name || unitName(k));
   charts.troop && charts.troop.destroy();
   charts.troop = new Chart(document.getElementById("troopChart"), {
     data: {
