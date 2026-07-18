@@ -11,6 +11,7 @@ class FarmManager:
 
     LOCATORS = {
         'rally_point_send': 'build.php?id=39&tt=2',
+        'rally_point_troops': 'build.php?id=39&gid=16&tt=1',
         'coord_x':          'input[name="x"]',
         'coord_y':          'input[name="y"]',
         'raid_radio':       'input[value="4"]',
@@ -923,6 +924,67 @@ class FarmManager:
 
     # --- ФАРМ ------------------------------------------------------
 
+    def _read_home_troops(self, indices: list[int]) -> dict:
+        """
+        Читает кол-во своих ДОМАШНИХ войск для указанных типов с вкладки
+        «Войска» точки сбора (build.php?id=39&gid=16&tt=1).
+
+        Разметка (как в TroopTrainer.get_current_count): блок ровно
+        `.troop_details` (без outHero), строка `.units.last tr`, ячейки `.unit`
+        по порядку (1-я = t1, 2-я = t2, ...); класс `.none` = войск этого типа нет.
+
+        Возвращает {index: count}. Значение -1 = прочитать не удалось — тогда
+        фарм не блокируем (шлём как раньше), но пишем предупреждение в лог.
+        """
+        result = {ti: -1 for ti in indices}
+        try:
+            self.page.goto(f"{self.config.base_url}/{self.LOCATORS['rally_point_troops']}")
+            self.page.wait_for_load_state('domcontentloaded')
+            time.sleep(random.uniform(1.0, 2.0))
+            counts = self.page.evaluate(r'''
+                () => {
+                    // Берём ТОЛЬКО блок с классом ровно "troop_details"
+                    // (пропускаем troop_details outHero и прочие варианты).
+                    const blocks = document.querySelectorAll('.troop_details');
+                    let home = null;
+                    for (const b of blocks) {
+                        const cls = (b.getAttribute('class') || '').trim().split(/\s+/);
+                        if (cls.length === 1 && cls[0] === 'troop_details') { home = b; break; }
+                    }
+                    if (!home) {
+                        for (const b of blocks) {
+                            if (!b.classList.contains('outHero')) { home = b; break; }
+                        }
+                    }
+                    if (!home) return null;
+                    const row = home.querySelector('.units.last tr') ||
+                                home.querySelector('.units tr');
+                    if (!row) return null;
+                    const cells = row.querySelectorAll('.unit');
+                    if (!cells.length) return null;
+                    const out = [];
+                    cells.forEach(cell => {
+                        if (cell.classList.contains('none')) { out.push(0); return; }
+                        const n = parseInt(cell.textContent.replace(/\D/g, ''), 10);
+                        out.push(isNaN(n) ? 0 : n);
+                    });
+                    return out;  // 1-based позиция: out[0]=t1, out[1]=t2, ...
+                }
+            ''')
+            if counts:
+                for ti in indices:
+                    pos = ti - 1
+                    if 0 <= pos < len(counts):
+                        result[ti] = int(counts[pos])
+            else:
+                logging.warning(
+                    "⚠️ Не удалось прочитать домашние войска (tt=1) — "
+                    "фарм по старой логике (без проверки запаса)."
+                )
+        except Exception as e:
+            logging.warning(f"⚠️ Ошибка чтения домашних войск: {e}")
+        return result
+
     def run_farm_cycle(self, force_rescan: bool = False, force_send: bool = False):
         """
         Полный фарм-цикл:
@@ -1013,6 +1075,9 @@ class FarmManager:
         # Шаг 3: атака
         types_str = "+".join(f"t{i}" for i in troop_indices)
         logging.info(f"🚜 Отправка войск: {len(self.farm_list)} целей | {troops} юнитов ({types_str})")
+        # Запас домашних войск читаем ОДИН раз за цикл. Если какого-то типа
+        # меньше, чем нужно на полную отправку (troops), остаток НЕ шлём вовсе.
+        home_troops = self._read_home_troops(troop_indices)
         sent = 0
         skipped_animals = 0
         occupied_now = []
@@ -1038,6 +1103,19 @@ class FarmManager:
                 result = None
                 while available:
                     current_troop = available[rr % len(available)]
+                    # Проверка запаса ДО отправки: если войск типа меньше, чем
+                    # нужно на полную волну (troops) — остаток НЕ шлём, а тип
+                    # исключаем из цикла (дальше он только уменьшится) и пробуем
+                    # следующий доступный тип на эту же цель.
+                    have = home_troops.get(current_troop, -1)
+                    if have != -1 and have < troops:
+                        logging.info(
+                            f"🚫 Войск t{current_troop} меньше нормы отправки "
+                            f"({have} < {troops}) — остаток не шлём, тип исключён из цикла."
+                        )
+                        exhausted.add(current_troop)
+                        available = _available()
+                        continue
                     result = self.attack_oasis(
                         oasis['x'], oasis['y'], troops, current_troop,
                         distance=oasis.get('distance', 0.0),
@@ -1047,10 +1125,14 @@ class FarmManager:
                         logging.info(f"🚫 Войска t{current_troop} закончились — исключаю из ротации.")
                         available = _available()
                         continue
+                    if result == "SUCCESS" and have != -1:
+                        # Локально вычитаем отправленных — следующей цели уйдёт
+                        # из остатка, и гейт сработает, когда запас < troops.
+                        home_troops[current_troop] = have - troops
                     break
 
-                if result == "NO_TROOPS" and not available:
-                    logging.info("🛑 Все выбранные типы войск закончились. Стоп.")
+                if not available:
+                    logging.info("🛑 Не осталось типов войск с достаточным запасом. Стоп.")
                     break
 
                 if result == "OCCUPIED":
