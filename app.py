@@ -176,13 +176,29 @@ def load_status(name: str) -> dict:
 
 
 def load_stats(name: str) -> dict:
-    """Статистика аккаунта (ресурсы/войска/герой/атаки) из stats-файла."""
+    """Статистика аккаунта (ресурсы/войска/герой/атаки) из stats-файла.
+    Дополняется статистикой фарма (набеги/юниты/оазисы) из farm_stats-файла."""
     p = account_file(name, 'stats')
+    stats = {}
+    try:
+        if p.exists():
+            stats = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        logging.debug("suppressed error in app:119", exc_info=True)
+    farm = load_farm_stats(name)
+    if farm:
+        stats["farm"] = farm
+    return stats
+
+
+def load_farm_stats(name: str) -> dict:
+    """Читает накопленную статистику фарма (data/<acc>/farm_stats.json)."""
+    p = account_file(name, 'farm_stats')
     try:
         if p.exists():
             return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
-        logging.debug("suppressed error in app:119", exc_info=True)
+        logging.debug("suppressed error: farm_stats read", exc_info=True)
     return {}
 
 

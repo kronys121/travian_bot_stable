@@ -6,6 +6,8 @@ import math
 import requests
 from bs4 import BeautifulSoup
 
+from actions.farm_stats import FarmStats
+
 
 class FarmManager:
 
@@ -55,6 +57,8 @@ class FarmManager:
         # FIX: кулдауны теперь на диске — переживают рестарт бота
         # (раньше после перезапуска бот сразу слал повторные набеги)
         self.cooldowns = self._load_cooldowns()
+        # Статистика фарма (набеги/юниты/оазисы) — копится и переживает рестарт.
+        self.farm_stats = FarmStats(self._acc_name())
 
     # --- ПЕРСИСТЕНТНОСТЬ -------------------------------------------
 
@@ -1145,9 +1149,17 @@ class FarmManager:
                 if result == "SUCCESS":
                     sent += 1
                     rr += 1  # следующая цель — следующим типом (чередование)
+                    self.farm_stats.record_raid(
+                        oasis['x'], oasis['y'], current_troop, troops,
+                        oasis.get('distance', 0.0),
+                    )
                     time.sleep(random.uniform(2.5, 4.5))
         except KeyboardInterrupt:
             logging.info("🛑 Фарм прерван.")
+
+        # Сохраняем накопленную статистику один раз за цикл.
+        if sent:
+            self.farm_stats.save()
 
         if occupied_now:
             self.farm_list = [

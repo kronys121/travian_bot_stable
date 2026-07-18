@@ -23,6 +23,7 @@ _KINDS = {
     'stats':          ('stats_{name}.json',          'stats.json'),
     'build_progress': ('build_progress_{name}.json', 'build_progress.json'),
     'build_history':  ('build_history_{name}.json',  'build_history.json'),
+    'farm_stats':     ('farm_stats_{name}.json',      'farm_stats.json'),
 }
 
 

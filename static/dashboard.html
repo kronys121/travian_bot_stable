@@ -1210,6 +1210,30 @@ function renderAccountBlock(a) {
   return rows;
 }
 
+function renderFarmBlock(farm) {
+  if (!farm || !farm.totals || !farm.totals.raids) {
+    return `<p class="stat-empty">${t("Пока нет набегов")}</p>`;
+  }
+  const tot = farm.totals || {};
+  const oasesCount = farm.oases ? Object.keys(farm.oases).length : 0;
+  const d = new Date();
+  const ld = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const today = (farm.daily && farm.daily[ld]) || null;
+  const byTroop = farm.by_troop || {};
+  const rows = Object.keys(byTroop)
+    .map(k => [k, byTroop[k]])
+    .sort((a, b) => (b[1].units || 0) - (a[1].units || 0))
+    .map(([k, v]) => `<div class="res-row"><span>t${esc(k)}</span>
+        <span class="prod">${fmtNum(v.units || 0)} ${t("юн.")} / ${fmtNum(v.raids || 0)} ${t("наб.")}</span></div>`)
+    .join("");
+  return `
+    <div class="hero-line"><span>${t("Набегов всего")}</span><b>${fmtNum(tot.raids || 0)}</b></div>
+    <div class="hero-line"><span>${t("Юнитов отправлено")}</span><b>${fmtNum(tot.units_sent || 0)}</b></div>
+    <div class="hero-line"><span>${t("Оазисов фармится")}</span><b>${fmtNum(oasesCount)}</b></div>
+    ${today ? `<div class="hero-line"><span>${t("Сегодня")}</span><b>${fmtNum(today.raids || 0)} ${t("наб.")}</b></div>` : ""}
+    ${rows ? `<div class="farm-bytroop">${rows}</div>` : ""}`;
+}
+
 function renderStats(stats, accName) {
   if (!stats || !stats.updated_at) {
     return `<div class="stats-panel"><h3>${t("Статистика")}</h3>
@@ -1271,6 +1295,7 @@ function renderStats(stats, accName) {
       <div class="stat-block"><h4>${t("Строительство")}${villages.length > 1 ? " — " + esc(t(v.name) || "") : ""}</h4>${buildHtml}</div>
       <div class="stat-block"><h4>${t("Кузница")}</h4>${smithyHtml}</div>
       <div class="stat-block"><h4>${t("Войска в деревне")}</h4>${troopsHtml}</div>
+      <div class="stat-block"><h4>${t("Фарм")}</h4>${renderFarmBlock(stats.farm)}</div>
       <div class="stat-block"><h4>${t("Герой")}</h4>${heroHtml}</div>
       <div class="stat-block"><h4>${t("Аккаунт")}</h4>${accountHtml}</div>
       <div class="stat-block"><h4>${t("Входящие атаки")}</h4>${attacksHtml}</div>
