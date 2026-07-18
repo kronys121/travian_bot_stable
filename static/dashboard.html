@@ -1376,22 +1376,16 @@ function renderAccount(acc) {
   const trainFields = TRAIN_FIELDS.map(([k, l, st]) => fieldHtml("training", k, l, st, (s.training||{})[k])).join("");
 
   // Очередь тренировки с вкладками деревень.
-  // Вкладки: «Все деревни» (ключ "*") + по одной на каждую деревню из статистики.
-  // Активная вкладка при рендере — первая.
+  // Вкладки: по одной на каждую деревню из статистики (общая «Все деревни» убрана —
+  // каждая деревня настраивается отдельно). Глобальная queue остаётся фолбэком в боте.
   const tr = s.training || {};
   const villageQueues = (tr.village_queues && typeof tr.village_queues === "object") ? tr.village_queues : {};
-
-  // Фолбэк для глобальной очереди (ключ "*")
-  const globalQ = (Array.isArray(tr.queue) && tr.queue.length)
-    ? tr.queue
-    : [{ troop_type_index: tr.troop_type_index ?? 1, target_count: tr.target_count ?? 0, building: tr.building || "barracks" }];
 
   // statsVills нужен и для вкладок тренировки и для планов застройки
   const statsVills = ((acc.stats && acc.stats.villages) || []);
 
-  // Список вкладок: [{ key, label }]
-  const qTabs = [{ key: "*", label: LANG === "en" ? "All villages" : "Все деревни" }]
-    .concat(statsVills.map(v => ({ key: v.name || String(v.id), label: v.name || String(v.id) })));
+  // Список вкладок: только конкретные деревни
+  const qTabs = statsVills.map(v => ({ key: v.name || String(v.id), label: v.name || String(v.id) }));
 
   // Рендерим панель вкладок + одна панель-очередь на каждую вкладку
   const queueTabBtns = qTabs.map((tab, i) =>
@@ -1400,11 +1394,9 @@ function renderAccount(acc) {
   ).join("");
 
   const queuePanels = qTabs.map((tab, i) => {
-    const qRows = tab.key === "*"
-      ? globalQ
-      : (Array.isArray(villageQueues[tab.key]) && villageQueues[tab.key].length
-          ? villageQueues[tab.key]
-          : [{ troop_type_index: 1, target_count: 0, building: "barracks" }]);
+    const qRows = (Array.isArray(villageQueues[tab.key]) && villageQueues[tab.key].length)
+      ? villageQueues[tab.key]
+      : [{ troop_type_index: 1, target_count: 0, building: "barracks" }];
     return `<div class="queue-panel ${i===0?"":"hidden"}" data-queue data-queue-panel="${esc(tab.key)}">
       <div class="queue-head"><span>${LANG==="en"?"Unit":"Юнит"}</span><span>${LANG==="en"?"Target":"До шт"}</span><span>${LANG==="en"?"Building":"Здание"}</span><span></span></div>
       ${qRows.map(r => queueRowHtml(r, tribe)).join("")}
@@ -1412,9 +1404,11 @@ function renderAccount(acc) {
     <button type="button" class="btn-add-queue ${i===0?"":"hidden"}" onclick="addQueueRow(this)" data-for-panel="${esc(tab.key)}">+ ${LANG==="en"?"Add unit":"Добавить юнит"}</button>`;
   }).join("");
 
-  const queueEditor = `
-    <div class="q-tabs" data-queue-tabs>${queueTabBtns}</div>
-    ${queuePanels}`;
+  const queueEditor = qTabs.length
+    ? `<div class="q-tabs" data-queue-tabs>${queueTabBtns}</div>${queuePanels}`
+    : `<p class="sub-hint">${LANG === "en"
+        ? "Villages will appear after the bot collects stats (start the bot)."
+        : "Деревни появятся после первого сбора статистики ботом (запусти бота)."}</p>`;
 
   const npcField = fieldHtml("trade", "npc_threshold_pct", "Порог NPC-обмена, %", 5, (s.trade||{}).npc_threshold_pct);
 
@@ -1853,9 +1847,10 @@ async function saveAccount(name, btn) {
   if (ex !== undefined || ey !== undefined) {
     updates.farm.evade_target = { x: ex ?? null, y: ey ?? null };
   }
-  // Собираем очереди тренировки по вкладкам
-  // Вкладка "*" → updates.training.queue (глобальная, обратная совместимость)
-  // Остальные вкладки → updates.training.village_queues[villageName]
+  // Собираем очереди тренировки по вкладкам.
+  // Вкладка «Все деревни» ("*") убрана из GUI: если её панель встретилась
+  // (старый DOM) — пишем в глобальную queue; иначе глобальную НЕ трогаем
+  // (сохраняем как фолбэк). Остальные вкладки → training.village_queues[имя].
   const village_queues = {};
   card.querySelectorAll("[data-queue-panel]").forEach(panel => {
     const key = panel.dataset.queuePanel;
@@ -1874,8 +1869,6 @@ async function saveAccount(name, btn) {
     }
   });
   updates.training.village_queues = village_queues;
-  // Если панель "*" не нашлась (старый DOM) — пустой массив
-  if (!("queue" in updates.training)) updates.training.queue = [];
   // Собираем правила переброски ресурсов (пропускаем неполные строки)
   const trRules = [];
   card.querySelectorAll("[data-transfer-row]").forEach(row => {
