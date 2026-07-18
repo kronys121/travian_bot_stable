@@ -303,7 +303,8 @@
   .stats-panel h3 small { text-transform: none; letter-spacing: 0; font-size: 11px; }
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
   .stat-block h4 { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
-  .res-row { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; }
+  .res-row { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; flex-wrap: wrap; }
+  .res-row .resval { margin-left: auto; text-align: right; white-space: nowrap; }
   .res-row .prod { color: var(--muted); font-size: 11px; }
   .res-row .prod.pos { color: var(--ok); }
   .res-row .prod.neg { color: var(--accent); }
@@ -1125,7 +1126,7 @@ function renderResBlock(r) {
     const barCls = pct >= 95 ? "full" : pct >= 80 ? "warn" : "";
     const prodCls = p > 0 ? "pos" : p < 0 ? "neg" : "";
     return `<div class="res-row"><span>${RES_LABELS[k]}</span>
-        <span>${fmtNum(cur)}${mx ? " / " + fmtNum(mx) : ""} <span class="prod ${prodCls}">${p >= 0 ? "+" : ""}${fmtNum(p)}${LANG === "en" ? "/h" : "/ч"}</span></span></div>
+        <span class="resval">${fmtNum(cur)}${mx ? " / " + fmtNum(mx) : ""} <span class="prod ${prodCls}">${p >= 0 ? "+" : ""}${fmtNum(p)}${LANG === "en" ? "/h" : "/ч"}</span></span></div>
       <div class="res-bar"><i class="${barCls}" style="width:${pct}%"></i></div>`;
   }).join("");
   // Свободное зерно (прокорм): если 0 или меньше — постройки заблокированы
