@@ -117,6 +117,7 @@ def parse_report_detail(html: str) -> dict:
         'loot': {'lumber': 0, 'clay': 0, 'iron': 0, 'crop': 0},
         'looted_total': 0, 'capacity': 0,
         'sent': {}, 'dead': {}, 'troop_index': None,
+        'names': {},  # {позиция(1-based) -> название юнита из alt иконки}
     }
 
     subj = soup.select_one('.subject')
@@ -130,6 +131,12 @@ def parse_report_detail(html: str) -> dict:
     if attacker:
         res['sent'] = _troop_row_counts(attacker, 'troopCount_small')
         res['dead'] = _troop_row_counts(attacker, 'troopDead_small')
+
+        # Названия юнитов из строки иконок (td.uniticon img.unit alt="Фаланга")
+        for i, img in enumerate(attacker.select('td.uniticon img.unit')):
+            alt = (img.get('alt') or '').strip()
+            if alt:
+                res['names'][i + 1] = alt
 
         # Добыча: строка th="Добыча" в table.additionalInformation
         for tr in attacker.select('table.additionalInformation tbody.infos tr'):

@@ -104,6 +104,14 @@ class FarmStats:
         loot_res = rep.get("loot") or {}
         dead = rep.get("dead") or {}
         total_dead = sum(int(v) for v in dead.values())
+        names = rep.get("names") or {}
+
+        def _touch(idx):
+            bt = d["by_troop"].setdefault(str(idx), {"raids": 0, "units": 0, "loot": 0, "lost": 0})
+            nm = names.get(idx)
+            if nm:
+                bt["name"] = nm
+            return bt
 
         tot = d.setdefault("totals", {})
         tot["loot"] = tot.get("loot", 0) + looted
@@ -115,11 +123,9 @@ class FarmStats:
 
         ti = rep.get("troop_index")
         if ti is not None:
-            bt = d["by_troop"].setdefault(str(ti), {"raids": 0, "units": 0, "loot": 0, "lost": 0})
-            bt["loot"] = bt.get("loot", 0) + looted
+            _touch(ti)["loot"] += looted
         for k, v in dead.items():
-            bt = d["by_troop"].setdefault(str(k), {"raids": 0, "units": 0, "loot": 0, "lost": 0})
-            bt["lost"] = bt.get("lost", 0) + int(v)
+            _touch(k)["lost"] += int(v)
 
         if rep.get("x") is not None:
             key = f"{rep['x']}|{rep['y']}"

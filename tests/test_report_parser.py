@@ -181,6 +181,10 @@ class TestReportDetail(unittest.TestCase):
         self.assertEqual(self.d['dead'], {})
         self.assertEqual(self.d['troop_index'], 1)
 
+    def test_unit_names(self):
+        # названия юнитов читаются из alt иконок
+        self.assertEqual(self.d['names'].get(1), "Фаланга")
+
 
 # Второй реальный отчёт (id 12921718): полная сумка 350/350, иной расклад ресурсов.
 DETAIL_HTML_FULL = f"""

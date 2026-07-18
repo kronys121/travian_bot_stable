@@ -196,10 +196,11 @@ function drawTroops() {
   const keys = Object.keys(bt).sort((a, b) => (bt[b].loot || 0) - (bt[a].loot || 0));
   const loot = keys.map(k => bt[k].loot || 0);
   const perUnit = keys.map(k => (bt[k].units || 0) > 0 ? (bt[k].loot || 0) / bt[k].units : 0);
+  const labels = keys.map(k => bt[k].name || ("t" + k));
   charts.troop && charts.troop.destroy();
   charts.troop = new Chart(document.getElementById("troopChart"), {
     data: {
-      labels: keys.map(k => "t" + k),
+      labels: labels,
       datasets: [
         { type: "bar", label: "Добыча", data: loot, backgroundColor: "#d9b23a99", borderColor: "#d9b23a", yAxisID: "y" },
         { type: "bar", label: "Добыча / юнит", data: perUnit, backgroundColor: "#6a9a5b99", borderColor: "#6a9a5b", yAxisID: "y1" },
