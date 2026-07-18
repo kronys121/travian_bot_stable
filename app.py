@@ -289,7 +289,7 @@ async def api_add_account(data: dict):
     if "rate" in clean:
         clean["rate"] = int(clean["rate"])
     # Проверяем что шаблон существует; дефолт x3
-    from travian_bot.config.build_templates import TEMPLATES
+    from config.build_templates import TEMPLATES
     bt = clean.get("build_template", "x3")
     if bt not in TEMPLATES:
         bt = "x3"
