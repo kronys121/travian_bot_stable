@@ -40,13 +40,16 @@ class FarmStats:
 
     def _default(self) -> dict:
         return {
-            "totals": {"raids": 0, "units_sent": 0},
+            "totals": {"raids": 0, "units_sent": 0, "loot": 0, "lost": 0, "reports": 0,
+                       "loot_res": {"lumber": 0, "clay": 0, "iron": 0, "crop": 0}},
             # "1": {"raids": int, "units": int, "loot": int, "lost": int}
             "by_troop": {},
-            # "x|y": {"raids": int, "units": int, "last": iso}
+            # "x|y": {"raids": int, "units": int, "loot": int, "lost": int, "last": iso}
             "oases": {},
             # "YYYY-MM-DD": {"raids": int, "units": int}
             "daily": {},
+            # id последнего обработанного отчёта (отчёты имеют возрастающие id)
+            "last_report_id": 0,
             "started_at": _now(),
             "updated_at": None,
         }
@@ -91,6 +94,46 @@ class FarmStats:
         day["units"] += count
 
         d["updated_at"] = now
+
+    def record_report(self, rep: dict):
+        """Учитывает разобранный отчёт о набеге: добычу (по ресурсам и суммой)
+        и потери войск. Профит по типам войск: лут вешаем на доминирующий тип
+        набега, потери — на каждый тип по строке погибших."""
+        d = self.data
+        looted = int(rep.get("looted_total") or 0)
+        loot_res = rep.get("loot") or {}
+        dead = rep.get("dead") or {}
+        total_dead = sum(int(v) for v in dead.values())
+
+        tot = d.setdefault("totals", {})
+        tot["loot"] = tot.get("loot", 0) + looted
+        tot["lost"] = tot.get("lost", 0) + total_dead
+        tot["reports"] = tot.get("reports", 0) + 1
+        lr = tot.setdefault("loot_res", {"lumber": 0, "clay": 0, "iron": 0, "crop": 0})
+        for k in ("lumber", "clay", "iron", "crop"):
+            lr[k] = lr.get(k, 0) + int(loot_res.get(k, 0))
+
+        ti = rep.get("troop_index")
+        if ti is not None:
+            bt = d["by_troop"].setdefault(str(ti), {"raids": 0, "units": 0, "loot": 0, "lost": 0})
+            bt["loot"] = bt.get("loot", 0) + looted
+        for k, v in dead.items():
+            bt = d["by_troop"].setdefault(str(k), {"raids": 0, "units": 0, "loot": 0, "lost": 0})
+            bt["lost"] = bt.get("lost", 0) + int(v)
+
+        if rep.get("x") is not None:
+            key = f"{rep['x']}|{rep['y']}"
+            oa = d["oases"].setdefault(key, {"raids": 0, "units": 0, "last": None})
+            oa["loot"] = oa.get("loot", 0) + looted
+            oa["lost"] = oa.get("lost", 0) + total_dead
+
+        d["updated_at"] = _now()
+
+    def set_last_report_id(self, report_id):
+        try:
+            self.data["last_report_id"] = int(report_id)
+        except (TypeError, ValueError):
+            pass
 
     def save(self):
         """Атомарная запись на диск (tmp + replace)."""

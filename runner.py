@@ -206,16 +206,23 @@ def run_bot(acc_config: dict):
         from actions.stats_collector     import StatsCollector
         from actions.celebration_action  import CelebrationAction
         from actions.smithy_action       import SmithyUpgrader
+        from actions.report_action        import ReportCollector
+        from actions.farm_stats           import FarmStats
 
         cookie_manager   = CookieManager(context, config.cookie_file)
         tasks_action     = TasksAction(page, config)
         adventure_action = HeroAdventure(page, config)
         smart_builder    = SmartBuilder(page, config, tasks_action, settings_store=store)
-        farm_manager     = FarmManager(page, config, settings_store=store, adventure_action=adventure_action)
+        # Общая статистика фарма: пишут FarmManager (набеги/юниты) и
+        # ReportCollector (добыча/потери) — один файл, без гонок.
+        farm_stats       = FarmStats(name)
+        farm_manager     = FarmManager(page, config, settings_store=store,
+                                       adventure_action=adventure_action, farm_stats=farm_stats)
         attack_monitor   = AttackMonitor(page, config)
         troop_trainer    = TroopTrainer(page, config, settings_store=store)
         trade_manager    = TradeManager(page, config)
         stats_collector  = StatsCollector(page, config)
+        report_collector = ReportCollector(page, config, farm_stats)
 
         # Начальные настройки фарма из store (дальше FarmManager сам обновляет)
         farm_settings = store.section('farm')
@@ -656,6 +663,10 @@ def run_bot(acc_config: dict):
             """Лёгкий сбор статистики: ресурсы, войска, герой (одна страница)."""
             stats_collector.collect()
 
+        def job_reports():
+            """Читает новые боевые отчёты: добыча, потери, профит по войскам."""
+            report_collector.collect()
+
         def job_scan():
             """
             Принудительный скан карты (по требованию из GUI/Telegram).
@@ -712,6 +723,8 @@ def run_bot(acc_config: dict):
                       enabled_check=lambda: store.feature('smithy_enabled', False), initial_delay=120)
         scheduler.add('stats',     _guard('stats', job_stats),          interval_sec=5 * 60,  priority=8,
                       initial_delay=30)
+        scheduler.add('reports',   _guard('reports', job_reports),      interval_sec=20 * 60, priority=8,
+                      enabled_check=lambda: store.feature('reports_enabled', True), initial_delay=200)
         # Скан карты — только по требованию (run_now из idle_hook при команде из GUI)
         scheduler.add('scan',      _guard('scan', job_scan),            interval_sec=10**9, priority=1,
                       initial_delay=10**9)
@@ -726,7 +739,7 @@ def run_bot(acc_config: dict):
         # Срочные (evade/scan/rescan) сюда НЕ входят — они всегда важнее.
         ORDERABLE_TASKS = [
             "farm", "hero_farm", "build", "train", "tasks", "adventure",
-            "celebration", "smithy", "npc_trade", "transfer", "stats",
+            "celebration", "smithy", "npc_trade", "transfer", "stats", "reports",
         ]
         _PRIORITY_BASE = 10  # чтобы orderable-задачи всегда были ниже срочных (0-1)
 

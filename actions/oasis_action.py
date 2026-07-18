@@ -35,7 +35,8 @@ class FarmManager:
         'u40': {'name': 'Слон',      'def_inf': 440, 'def_cav': 520},
     }
 
-    def __init__(self, page, config, settings_store=None, adventure_action=None):
+    def __init__(self, page, config, settings_store=None, adventure_action=None,
+                 farm_stats=None):
         self.page = page
         self.config = config
         self.settings_store = settings_store
@@ -58,7 +59,8 @@ class FarmManager:
         # (раньше после перезапуска бот сразу слал повторные набеги)
         self.cooldowns = self._load_cooldowns()
         # Статистика фарма (набеги/юниты/оазисы) — копится и переживает рестарт.
-        self.farm_stats = FarmStats(self._acc_name())
+        # Экземпляр может быть общим с ReportCollector (передаётся снаружи).
+        self.farm_stats = farm_stats or FarmStats(self._acc_name())
 
     # --- ПЕРСИСТЕНТНОСТЬ -------------------------------------------
 

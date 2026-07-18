@@ -831,6 +831,7 @@ const FEATURES = [
   ["smithy_enabled",       "Авто-улучшение (Кузница)",  "Улучшать войска в кузнице до заданных уровней по приоритету"],
   ["smithy_use_ads",       "Улучшение юнитов за рекламу", "Смотреть видео при улучшении в кузнице: -25% времени (реклама ~40с, откат на обычное)"],
   ["evasion_enabled",      "Эвазия при атаке",           "Вывод войск при входящей атаке"],
+  ["reports_enabled",      "Читать отчёты",              "Разбор боевых отчётов: добыча, потери, профит по войскам (для панели «Фарм»)"],
   ];
 
 // Периодические задачи, порядок которых можно менять перетаскиванием.
@@ -1211,7 +1212,7 @@ function renderAccountBlock(a) {
 }
 
 function renderFarmBlock(farm) {
-  if (!farm || !farm.totals || !farm.totals.raids) {
+  if (!farm || !farm.totals || !(farm.totals.raids || farm.totals.reports)) {
     return `<p class="stat-empty">${t("Пока нет набегов")}</p>`;
   }
   const tot = farm.totals || {};
@@ -1219,16 +1220,36 @@ function renderFarmBlock(farm) {
   const d = new Date();
   const ld = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const today = (farm.daily && farm.daily[ld]) || null;
+  const lootRes = tot.loot_res || {};
+  const resLine = (tot.loot || 0) > 0
+    ? `<div class="res-row"><span>${t("по ресурсам")}</span><span class="prod">🪵${fmtNum(lootRes.lumber || 0)} 🧱${fmtNum(lootRes.clay || 0)} ⚙️${fmtNum(lootRes.iron || 0)} 🌾${fmtNum(lootRes.crop || 0)}</span></div>`
+    : "";
+
+  // профит по типам войск: лут на один отправленный юнит; лучший помечаем
   const byTroop = farm.by_troop || {};
-  const rows = Object.keys(byTroop)
-    .map(k => [k, byTroop[k]])
-    .sort((a, b) => (b[1].units || 0) - (a[1].units || 0))
-    .map(([k, v]) => `<div class="res-row"><span>t${esc(k)}</span>
-        <span class="prod">${fmtNum(v.units || 0)} ${t("юн.")} / ${fmtNum(v.raids || 0)} ${t("наб.")}</span></div>`)
-    .join("");
+  const entries = Object.keys(byTroop).map(k => {
+    const v = byTroop[k];
+    const perUnit = (v.units || 0) > 0 ? (v.loot || 0) / v.units : 0;
+    return { k, units: v.units || 0, raids: v.raids || 0, loot: v.loot || 0, lost: v.lost || 0, perUnit };
+  });
+  let bestKey = null, bestPer = 0;
+  entries.forEach(e => { if (e.units > 0 && e.perUnit > bestPer) { bestPer = e.perUnit; bestKey = e.k; } });
+  const rows = entries
+    .sort((a, b) => b.loot - a.loot || b.units - a.units)
+    .map(e => {
+      const star = e.k === bestKey ? " ⭐" : "";
+      const per = e.units > 0 ? ` · ${e.perUnit.toFixed(1)}/${t("юн")}` : "";
+      const lost = e.lost ? ` · ☠${fmtNum(e.lost)}` : "";
+      return `<div class="res-row"><span>t${esc(e.k)}${star}</span>
+        <span class="prod">${fmtNum(e.loot)} 💰${per}${lost}</span></div>`;
+    }).join("");
+
   return `
     <div class="hero-line"><span>${t("Набегов всего")}</span><b>${fmtNum(tot.raids || 0)}</b></div>
     <div class="hero-line"><span>${t("Юнитов отправлено")}</span><b>${fmtNum(tot.units_sent || 0)}</b></div>
+    <div class="hero-line"><span>${t("Награблено всего")}</span><b>${fmtNum(tot.loot || 0)} 💰</b></div>
+    ${resLine}
+    <div class="hero-line"><span>${t("Юнитов потеряно")}</span><b>${fmtNum(tot.lost || 0)}</b></div>
     <div class="hero-line"><span>${t("Оазисов фармится")}</span><b>${fmtNum(oasesCount)}</b></div>
     ${today ? `<div class="hero-line"><span>${t("Сегодня")}</span><b>${fmtNum(today.raids || 0)} ${t("наб.")}</b></div>` : ""}
     ${rows ? `<div class="farm-bytroop">${rows}</div>` : ""}`;

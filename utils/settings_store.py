@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
         "train_enabled": False,           # по умолчанию ВЫКЛ — включается из GUI
         "npc_trade_enabled": False,   # по умолчанию ВЫКЛ — включается из GUI
         "transfer_enabled": False,    # переброска ресурсов между деревнями (ВЫКЛ)
+        "reports_enabled": True,      # читать боевые отчёты (добыча/потери/профит)
         "evasion_enabled": True,
     },
     "farm": {
@@ -92,7 +93,7 @@ DEFAULT_SETTINGS = {
         # Срочные задачи (evade/scan/rescan) сюда не входят — они всегда важнее.
         "order": [
             "farm", "hero_farm", "build", "train", "tasks", "adventure",
-            "celebration", "smithy", "npc_trade", "transfer", "stats",
+            "celebration", "smithy", "npc_trade", "transfer", "stats", "reports",
         ],
     },
 }
