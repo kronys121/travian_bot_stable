@@ -216,56 +216,76 @@ class FarmManager:
 
     # --- ПРОВЕРКА КЛЕТКИ ------------------------------------------
 
-    def _check_tile_details(self, target_x: int, target_y: int) -> dict:
-        return self.page.evaluate(r'''
-            async ([x, y]) => {
-                try {
-                    let token = "";
-                    if (typeof window.Travian !== "undefined" && window.Travian.apiToken)
-                        token = window.Travian.apiToken;
-                    else if (typeof window.TravianDefaults !== "undefined" && window.TravianDefaults.apiToken)
-                        token = window.TravianDefaults.apiToken;
+    def _parse_tile_html(self, html: str) -> dict:
+        """
+        Разбирает HTML попапа клетки (ответ /api/v1/map/tile-details).
 
-                    const headers = { "Content-Type": "application/json" };
-                    if (token) headers["Authorization"] = "Bearer " + token;
+        Разметка оазиса с животными (проверено на реальном сервере):
+          #troop_info tbody tr → td.ico > img.unit.uNN (u31..u40 = животные),
+          td.val = количество. Строки без img.unit (кнопки/«Нет информации»)
+          пропускаются. Захваченный оазис содержит ссылку на профиль владельца.
 
-                    const response = await fetch("/api/v1/map/tile-details", {
-                        method: "POST", headers,
-                        body: JSON.stringify({ x, y })
-                    });
-                    if (!response.ok) return { error: true };
+        Возвращает: is_oasis, is_conquered, is_occupied, animals{uNN:count},
+        has_player_troops, is_15_crop, is_9_crop, (error при пустом html).
+        """
+        if not html:
+            return {'error': True}
+        lower = html.lower()
+        is_oasis = ('oasis' in lower or 'оазис' in lower or 'nature' in lower)
+        is_conquered = ('spieler.php' in lower or '/profile/' in lower
+                        or 'allianz.php' in lower or 'владелец' in lower or 'owner' in lower)
 
-                    const data = await response.json();
-                    const html = data.html || "";
-                    const lower = html.toLowerCase();
+        animals_obj = {}
+        has_player_troops = False
+        total_units = 0
+        is_15_crop = False
+        is_9_crop = False
 
-                    const isOasis = lower.includes("oasis") || lower.includes("оазис") || lower.includes("nature");
-                    const isConquered = lower.includes("spieler.php") || lower.includes("/profile/")
-                        || lower.includes("allianz.php") || lower.includes("владелец") || lower.includes("owner");
+        soup = BeautifulSoup(html, 'html.parser')
 
-                    let animalsObj = {}, hasPlayerTroops = false, totalUnits = 0;
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, "text/html");
-                    doc.querySelectorAll("#troop_info tbody tr, .troop_details tbody tr").forEach(row => {
-                        const img = row.querySelector("img.unit");
-                        const valTd = row.querySelector("td.val");
-                        if (img && valTd) {
-                            const unitClass = Array.from(img.classList).find(c => /^u\d+$/.test(c));
-                            const count = parseInt(valTd.textContent.replace(/\D/g, ""), 10);
-                            if (unitClass && !isNaN(count) && count > 0) {
-                                totalUnits += count;
-                                const n = parseInt(unitClass.replace("u", ""), 10);
-                                if (n < 31 || n > 40) hasPlayerTroops = true;
-                                else animalsObj[unitClass] = count;
-                            }
-                        }
-                    });
-                    return { is_oasis: isOasis, is_conquered: isConquered,
-                             is_occupied: totalUnits > 0, animals: animalsObj,
-                             has_player_troops: hasPlayerTroops };
-                } catch (e) { return { error: true }; }
-            }
-        ''', [target_x, target_y])
+        # Кроперы: распределение ресурсов (4-я строка = зерно)
+        dist_table = soup.select_one('#distribution, table.distribution, .distribution')
+        if dist_table:
+            vals = dist_table.select('td.val, span.val')
+            if len(vals) >= 4:
+                crop_str = ''.join(c for c in vals[3].get_text() if c.isdigit())
+                if crop_str:
+                    crop_val = int(crop_str)
+                    if crop_val == 15:
+                        is_15_crop = True
+                    if crop_val == 9:
+                        is_9_crop = True
+
+        # Животные в оазисах
+        if is_oasis:
+            for row in soup.select('#troop_info tbody tr, .troop_details tbody tr'):
+                img = row.select_one('img.unit')
+                val_td = row.select_one('td.val')
+                if img and val_td:
+                    unit_class = next(
+                        (c for c in img.get('class', []) if c.startswith('u') and c[1:].isdigit()),
+                        None
+                    )
+                    count_str = ''.join(c for c in val_td.get_text() if c.isdigit())
+                    if unit_class and count_str:
+                        count = int(count_str)
+                        if count > 0:
+                            total_units += count
+                            n = int(unit_class[1:])
+                            if n < 31 or n > 40:
+                                has_player_troops = True
+                            else:
+                                animals_obj[unit_class] = count
+
+        return {
+            'is_oasis':          is_oasis,
+            'is_conquered':      is_conquered,
+            'is_occupied':       total_units > 0,
+            'animals':           animals_obj,
+            'has_player_troops': has_player_troops,
+            'is_15_crop':        is_15_crop,
+            'is_9_crop':         is_9_crop,
+        }
 
     # --- СКАН ------------------------------------------------------
 
@@ -301,62 +321,7 @@ class FarmManager:
                 return {'error': True}
 
             data = resp.json()
-            html = data.get('html', '')
-            lower = html.lower()
-
-            is_oasis    = ('oasis' in lower or 'оазис' in lower or 'nature' in lower)
-            is_conquered = ('spieler.php' in lower or '/profile/' in lower
-                            or 'allianz.php' in lower or 'владелец' in lower or 'owner' in lower)
-
-            animals_obj = {}
-            has_player_troops = False
-            total_units = 0
-            is_15_crop = False
-            is_9_crop  = False
-
-            soup = BeautifulSoup(html, 'html.parser')
-
-            # Кроперы
-            dist_table = soup.select_one('#distribution, table.distribution, .distribution')
-            if dist_table:
-                vals = dist_table.select('td.val, span.val')
-                if len(vals) >= 4:
-                    crop_str = ''.join(c for c in vals[3].get_text() if c.isdigit())
-                    if crop_str:
-                        crop_val = int(crop_str)
-                        if crop_val == 15: is_15_crop = True
-                        if crop_val == 9:  is_9_crop  = True
-
-            # Животные в оазисах
-            if is_oasis:
-                for row in soup.select('#troop_info tbody tr, .troop_details tbody tr'):
-                    img   = row.select_one('img.unit')
-                    val_td = row.select_one('td.val')
-                    if img and val_td:
-                        unit_class = next(
-                            (c for c in img.get('class', []) if c.startswith('u') and c[1:].isdigit()),
-                            None
-                        )
-                        count_str = ''.join(c for c in val_td.get_text() if c.isdigit())
-                        if unit_class and count_str:
-                            count = int(count_str)
-                            if count > 0:
-                                total_units += count
-                                n = int(unit_class[1:])
-                                if n < 31 or n > 40:
-                                    has_player_troops = True
-                                else:
-                                    animals_obj[unit_class] = count
-
-            return {
-                'is_oasis':          is_oasis,
-                'is_conquered':      is_conquered,
-                'is_occupied':       total_units > 0,
-                'animals':           animals_obj,
-                'has_player_troops': has_player_troops,
-                'is_15_crop':        is_15_crop,
-                'is_9_crop':         is_9_crop,
-            }
+            return self._parse_tile_html(data.get('html', ''))
         except Exception as e:
             logging.debug(f"_fetch_tile({x}|{y}) ошибка: {e}")
             return {'error': True}
