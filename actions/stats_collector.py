@@ -372,8 +372,12 @@ class StatsCollector:
                             if (v && /^\d+$/.test(v)) seconds = parseInt(v, 10);
                             timerTxt = timerEl.textContent.trim();
                         }
-                        // подпись строки (без таймера)
-                        const label = li.textContent.replace(timerTxt, '').replace(/\s+/g, ' ').trim();
+                        // подпись строки без таймера, без script/style и без
+                        // ссылки «Продлить» (a/button). Иначе в текст попадает
+                        // JS таймера (jQuery(function...)) и текст кнопки — мусор.
+                        const clone = li.cloneNode(true);
+                        clone.querySelectorAll('script, style, a, button').forEach(e => e.remove());
+                        const label = clone.textContent.replace(timerTxt, '').replace(/\s+/g, ' ').trim();
                         const cls = li.getAttribute('class') || '';
                         infoItems.push({ label: label.slice(0, 60), seconds, timer: timerTxt, cls });
                     });

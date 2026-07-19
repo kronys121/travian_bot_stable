@@ -1259,6 +1259,8 @@ function renderAccountBlock(a) {
       if (!it.label && !it.timer) return;
       // пропускаем защиту новичка — уже показали выше
       if (/(новичк|защит|beginner|protection|schutz)/i.test(it.label || "")) return;
+      // пропускаем «Продлить Travian Plus / Золотой клуб» — статус уже показан выше
+      if (/(travian\s*plus|золот\w*\s+клуб|gold\s*club)/i.test(it.label || "")) return;
       const time = it.seconds != null ? fmtDuration(it.seconds) : (it.timer || "");
       if (!time) return;
       rows += `<div class="res-row"><span>${esc(t(it.label) || "—")}</span>
