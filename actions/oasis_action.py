@@ -755,7 +755,23 @@ class FarmManager:
         time.sleep(random.uniform(1.5, 2.5))
 
         # ── СВЕЖАЯ ПРОВЕРКА ЖИВОТНЫХ прямо перед отправкой ──
-        status = self._check_tile_details(target_x, target_y)
+        # Через прямой HTTP (как скан), а НЕ через JS страницы отправки —
+        # там мог не сработать api-токен и проверка молча падала, из-за чего
+        # войска уходили на оазис с уже заспавненными животными.
+        try:
+            status = self._fetch_tile(self._get_session(), target_x, target_y)
+        except Exception as e:
+            logging.warning(f"⚠️ Проверка оазиса ({target_x}|{target_y}) упала: {e}")
+            status = {"error": True}
+
+        # Fail-safe: не удалось проверить — НЕ шлём вслепую, цель остаётся в списке.
+        if status.get("error"):
+            logging.warning(
+                f"⚠️ Не удалось проверить оазис ({target_x}|{target_y}) перед набегом "
+                f"— атака отменена (без риска нарваться на животных)."
+            )
+            return "ANIMALS"
+
         if status.get("is_conquered"):
             logging.warning("🚨 Оазис захвачен игроком! Атака отменена.")
             return "OCCUPIED"
