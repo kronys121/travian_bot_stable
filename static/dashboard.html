@@ -1550,8 +1550,10 @@ function renderAccount(acc) {
     <p class="last-action" data-status>${statusHtml(acc)}</p>
     <div data-stats>${renderStats(acc.stats, acc.name)}</div>
     <div class="sections">
-      <div class="section"><h3>Модули (вкл/выкл на лету)</h3><div class="toggles">${toggles}</div></div>
-      <div class="section" style="margin-top:14px"><h3>Ночной режим</h3>${nightFields}</div>
+      <div>
+        <div class="section"><h3>Модули (вкл/выкл на лету)</h3><div class="toggles">${toggles}</div></div>
+        <div class="section" style="margin-top:14px"><h3>Ночной режим</h3>${nightFields}</div>
+      </div>
       <div>
         <div class="section" style="margin-bottom:14px"><h3>Фарм</h3><div class="fields">${tribeSel}${farmTroopChecklist}${farmFields}${evadeFields}</div></div>
         <div class="section" style="margin-bottom:14px"><h3>Тренировка</h3><div class="fields">${trainFields}</div>${queueEditor}</div>

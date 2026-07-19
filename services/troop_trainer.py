@@ -250,28 +250,35 @@ class TroopTrainer(BaseAction):
         Возвращает очередь тренировки для деревни.
 
         Приоритет:
-          1. training.village_queues[village_name] — если задано для деревни
-          2. training.village_queues["*"]           — правило «все деревни»
-          3. training.queue                         — глобальная очередь
-          4. Старый одиночный формат               — обратная совместимость
+          1. village_queues[village_name] — если КЛЮЧ есть, он ГЛАВНЫЙ:
+             пустая очередь деревни = ничего не тренируем (без фолбэка).
+          2. village_queues["*"]           — правило «все деревни»
+          3. training.queue                — глобальная очередь
+          4. Старый одиночный формат       — обратная совместимость
         """
         settings = self._current_settings()
         default_building = settings.get("building", "barracks")
-
-        # 1+2. Очередь конкретной деревни или "*"
         village_queues = settings.get("village_queues") or {}
-        if isinstance(village_queues, dict) and village_queues:
-            candidates = []
-            if village_name:
-                candidates.append(village_name)
-            candidates.append("*")
-            for key in candidates:
-                raw = village_queues.get(key)
-                if isinstance(raw, list) and raw:
-                    norm = self._normalize_queue(raw, default_building)
-                    if norm:
-                        logging.info(f"[Train] Деревня '{village_name}': очередь из village_queues['{key}'] ({len(norm)} юн.)")
-                        return norm
+
+        # 1. Очередь конкретной деревни. Ключ задан в GUI => он решающий.
+        if (village_name and isinstance(village_queues, dict)
+                and village_name in village_queues):
+            raw = village_queues.get(village_name)
+            norm = self._normalize_queue(raw, default_building) if isinstance(raw, list) else []
+            if norm:
+                logging.info(f"[Train] Деревня '{village_name}': своя очередь ({len(norm)} юн.)")
+            else:
+                logging.info(f"[Train] Деревня '{village_name}': очередь пуста — тренировка пропущена.")
+            return norm
+
+        # 2. Правило «все деревни» ("*")
+        if isinstance(village_queues, dict):
+            raw = village_queues.get("*")
+            if isinstance(raw, list) and raw:
+                norm = self._normalize_queue(raw, default_building)
+                if norm:
+                    logging.info(f"[Train] Деревня '{village_name}': очередь из village_queues['*'] ({len(norm)} юн.)")
+                    return norm
 
         # 3. Глобальная очередь
         global_queue = settings.get("queue")
