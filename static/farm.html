@@ -135,12 +135,16 @@ function render() {
   const tot = DATA.totals || {};
   const oasesCount = DATA.oases ? Object.keys(DATA.oases).length : 0;
   const avg = (tot.raids || 0) > 0 ? (tot.loot || 0) / tot.raids : 0;
+  const net = tot.net != null ? tot.net : (tot.loot || 0);
+  const netCol = net >= 0 ? "#6a9a5b" : "#e94560";
   const cards = [
     ["Набегов", fmt(tot.raids)],
     ["Награблено", fmt(tot.loot) + " 💰"],
     ["Средн. за набег", fmt(avg)],
     ["Юнитов отправлено", fmt(tot.units_sent)],
     ["Юнитов потеряно", fmt(tot.lost)],
+    ["Потеряно ресурсов", fmt(tot.lost_value || 0)],
+    ["Чистый профит ≈", `<span style="color:${netCol}">${net >= 0 ? "+" : ""}${fmt(net)}</span>`],
     ["Оазисов фармится", fmt(oasesCount)],
   ];
   document.getElementById("cards").innerHTML = cards.map(([k, v]) =>

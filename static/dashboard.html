@@ -1225,10 +1225,13 @@ function renderFarmBlock(farm, accName) {
   }
   const tot = farm.totals || {};
   const oasesCount = farm.oases ? Object.keys(farm.oases).length : 0;
+  const net = tot.net != null ? tot.net : (tot.loot || 0);
+  const netCol = net >= 0 ? "var(--ok)" : "var(--accent)";
   return `
     <div class="hero-line"><span>${t("Набегов")}</span><b>${fmtNum(tot.raids || 0)}</b></div>
     <div class="hero-line"><span>${t("Награблено")}</span><b>${fmtNum(tot.loot || 0)}</b></div>
     <div class="hero-line"><span>${t("Юнитов потеряно")}</span><b>${fmtNum(tot.lost || 0)}</b></div>
+    <div class="hero-line"><span>${t("Чистыми")}</span><b style="color:${netCol}">${net >= 0 ? "+" : ""}${fmtNum(net)}</b></div>
     <div class="hero-line"><span>${t("Оазисов")}</span><b>${fmtNum(oasesCount)}</b></div>
     ${detail}`;
 }

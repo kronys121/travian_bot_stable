@@ -192,14 +192,52 @@ def load_stats(name: str) -> dict:
 
 
 def load_farm_stats(name: str) -> dict:
-    """Читает накопленную статистику фарма (data/<acc>/farm_stats.json)."""
+    """Читает накопленную статистику фарма (data/<acc>/farm_stats.json)
+    и досчитывает нетто-профит (добыча − стоимость погибших войск)."""
     p = account_file(name, 'farm_stats')
+    data = {}
     try:
         if p.exists():
-            return json.loads(p.read_text(encoding="utf-8"))
+            data = json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         logging.debug("suppressed error: farm_stats read", exc_info=True)
-    return {}
+    if data:
+        try:
+            tribe = get_store(name).section("farm").get("tribe", "roman")
+        except Exception:
+            tribe = "roman"
+        data["tribe"] = tribe
+        _attach_farm_net(data, tribe)
+    return data
+
+
+# Стоимость обучения юнита (сумма ресурсов) по племени, индекс 0=t1..9=t10.
+# Стандартные значения x1; поселенцы/вожди (t9/t10) = 0 (в фарме не гибнут).
+# Точно для классических племён; для остальных — оценка.
+UNIT_COST_BY_TRIBE = {
+    "roman":    [400, 460, 600, 360, 1410, 2170, 1830, 2990, 0, 0],
+    "teuton":   [250, 340, 490, 360, 1005, 1525, 1720, 2760, 0, 0],
+    "gaul":     [315, 535, 380, 1090, 1090, 1965, 1910, 3130, 0, 0],
+    "egyptian": [150, 420, 565, 380, 1090, 1800, 2200, 2920, 0, 0],
+    "hun":      [290, 370, 380, 900, 1200, 1600, 1900, 2900, 0, 0],
+    "spartan":  [200, 300, 380, 900, 1100, 1800, 1900, 2900, 0, 0],
+}
+
+
+def _attach_farm_net(farm: dict, tribe: str):
+    """Считает стоимость погибших войск и чистый профит фарма (в ресурсах)."""
+    costs = UNIT_COST_BY_TRIBE.get(tribe) or UNIT_COST_BY_TRIBE["roman"]
+    lost_value = 0
+    for k, v in (farm.get("by_troop") or {}).items():
+        try:
+            idx = int(k)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= idx <= len(costs):
+            lost_value += int(v.get("lost", 0)) * (costs[idx - 1] or 0)
+    tot = farm.setdefault("totals", {})
+    tot["lost_value"] = lost_value
+    tot["net"] = int(tot.get("loot", 0)) - lost_value
 
 
 def is_alive(status: dict) -> bool:
@@ -556,15 +594,10 @@ async def account_logs(name: str, lines: int = 150, lang: str = "ru"):
 
 @app.get("/api/accounts/{name}/farm_stats")
 async def api_farm_stats(name: str):
-    """Сырая статистика фарма для страницы с графиками (+ племя для имён юнитов)."""
+    """Сырая статистика фарма для страницы с графиками (+ племя и нетто-профит)."""
     if get_account(name) is None:
         raise HTTPException(404, "Аккаунт не найден")
-    data = load_farm_stats(name)
-    try:
-        data["tribe"] = get_store(name).section("farm").get("tribe", "roman")
-    except Exception:
-        data["tribe"] = "roman"
-    return JSONResponse(content=data)
+    return JSONResponse(content=load_farm_stats(name))
 
 
 @app.get("/account/{name}/farm", response_class=HTMLResponse)
