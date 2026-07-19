@@ -7,10 +7,10 @@ from pathlib import Path
 
 DEFAULT_SETTINGS = {
     "features": {
-        "farm_enabled": True,
-        "hero_only": False,          # фарм ТОЛЬКО героем (без войск)
+        # Три взаимоисключающих режима фарма (radio-логика в GUI):
+        "farm_enabled": True,        # фарм ТОЛЬКО войсками (по пустым оазисам)
+        "hero_only": False,          # фарм ТОЛЬКО героем (по оазисам с животными)
         "hero_with_troops": False,   # герой (по животным) + войска (по пустым) в одном цикле
-        "hero_farm_enabled": False,  # отдельная задача планировщика: фарм героем по животным
         "build_enabled": True,
         "build_night_enabled": False,  # строить ночью; False = пауза стройки в часы sleep_hours
         "build_use_ads": True,        # строить через рекламу (section2, -25% времени)
@@ -100,7 +100,7 @@ DEFAULT_SETTINGS = {
         # первой, когда несколько задач готовы к запуску одновременно.
         # Срочные задачи (evade/scan/rescan) сюда не входят — они всегда важнее.
         "order": [
-            "farm", "hero_farm", "build", "train", "tasks", "adventure",
+            "farm", "build", "train", "tasks", "adventure",
             "celebration", "smithy", "npc_trade", "transfer", "stats", "reports",
         ],
     },

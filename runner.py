@@ -553,15 +553,6 @@ def run_bot(acc_config: dict):
             for_each_village(lambda vk: farm_manager.run_farm_cycle(), "Фарм",
                              should_continue=lambda: store.feature('farm_enabled', True))
 
-        def job_hero_farm():
-            """
-            Отдельная задача: фарм ТОЛЬКО героем по оазисам с животными
-            (безопасно, по силе героя). Войска сюда не входят — за них
-            отвечает задача 'farm'. Порядок и вкл/выкл настраиваются в GUI.
-            """
-            for_each_village(lambda vk: farm_manager.run_hero_farm(), "Фарм героем",
-                             should_continue=lambda: store.feature('hero_farm_enabled', False))
-
         def job_evade():
             """
             Срочная эвазия при атаке: ВСЕ войска каждой деревни уводятся
@@ -723,16 +714,13 @@ def run_bot(acc_config: dict):
                 # остальные «активные» действия не делаем.
                 if night:
                     return
-                # 2) Фарм войсками
-                if store.feature('farm_enabled', True):
+                # 2) Фарм (режим — войска / герой / оба — выбирается внутри run_farm_cycle)
+                if _farm_active():
                     farm_manager.run_farm_cycle()
-                # 3) Фарм героем (если включён отдельной фичей)
-                if store.feature('hero_farm_enabled', False):
-                    farm_manager.run_hero_farm()
-                # 4) Тренировка войск
+                # 3) Тренировка войск
                 if store.feature('train_enabled', False):
                     troop_trainer.auto_train(village_name=menu_manager._get_current_village_name())
-                # 5) NPC-обмен при переполнении
+                # 4) NPC-обмен при переполнении
                 if store.feature('npc_trade_enabled', False):
                     trade_manager.npc_trade(threshold_pct=npc_threshold)
 
@@ -772,15 +760,18 @@ def run_bot(acc_config: dict):
         def _grouped() -> bool:
             return store.feature('grouped_cycle', False)
 
+        def _farm_active() -> bool:
+            """Включён любой из трёх режимов фарма (войска / герой / оба)."""
+            return (store.feature('farm_enabled', True)
+                    or store.feature('hero_only', False)
+                    or store.feature('hero_with_troops', False))
+
         # FIX: без initial_delay next_run = "сейчас", и планировщик выполнял
         # эвакуацию ОДИН раз сразу при старте бота — без всякой атаки.
         # initial_delay=10**9 гарантирует запуск ТОЛЬКО через run_now.
         scheduler.add('evade',     _guard('evade', job_evade),          interval_sec=10**9, priority=0,
                       initial_delay=10**9)  # только по run_now
         scheduler.add('farm',      _guard('farm', job_farm),            interval_sec=farm_interval, priority=2)
-        scheduler.add('hero_farm', _guard('hero_farm', job_hero_farm),  interval_sec=farm_interval, priority=2,
-                      enabled_check=lambda: store.feature('hero_farm_enabled', False) and not _grouped(),
-                      initial_delay=90)
         scheduler.add('build',     _guard('build', job_build),          interval_sec=7 * 60,  priority=3,
                       enabled_check=lambda: store.feature('build_enabled', True) and not _grouped())
         scheduler.add('train',     _guard('train', job_train),          interval_sec=15 * 60, priority=4,
@@ -804,7 +795,7 @@ def run_bot(acc_config: dict):
         scheduler.add('reports',   _guard('reports', job_reports),      interval_sec=20 * 60, priority=8,
                       enabled_check=lambda: store.feature('reports_enabled', True), initial_delay=200)
         # Единый обход деревень «пачкой» (grouped-режим). По умолчанию выключен —
-        # включается тумблером; тогда farm/build/train/npc/hero_farm стоят на паузе.
+        # включается тумблером; тогда farm/build/train/npc стоят на паузе.
         scheduler.add('village_round', _guard('village_round', job_village_round),
                       interval_sec=farm_interval, priority=2,
                       enabled_check=_grouped, initial_delay=45)
@@ -815,13 +806,13 @@ def run_bot(acc_config: dict):
                       initial_delay=10**9)
 
         # фарм можно выключить из GUI (и он на паузе в grouped-режиме)
-        scheduler.jobs['farm'].enabled_check = lambda: store.feature('farm_enabled', True) and not _grouped()
+        scheduler.jobs['farm'].enabled_check = lambda: _farm_active() and not _grouped()
 
         # --- ПОРЯДОК ЗАДАЧ (настраивается перетаскиванием в GUI) ----
         # Периодические задачи, порядок которых пользователь задаёт в дашборде.
         # Срочные (evade/scan/rescan) сюда НЕ входят — они всегда важнее.
         ORDERABLE_TASKS = [
-            "farm", "hero_farm", "build", "train", "tasks", "adventure",
+            "farm", "build", "train", "tasks", "adventure",
             "celebration", "smithy", "npc_trade", "transfer", "stats", "reports",
         ]
         _PRIORITY_BASE = 10  # чтобы orderable-задачи всегда были ниже срочных (0-1)

@@ -644,6 +644,12 @@ const T_EN = {
     "http://host:port · http://user:pass@host:port · socks5://host:port (no password). SOCKS5 with password is not supported.",
 };
   Object.assign(T_EN, {
+    "Фарм только войсками": "Troops-only farming",
+    "Войска бьют пустые оазисы по списку": "Troops raid empty oases from the list",
+    "Герой бьёт оазисы с животными (по силе), войска не трогаем": "The hero raids animal oases (by strength); troops are left alone",
+    "Фарм героем и войсками": "Hero + troops farming",
+    "Герой — по оазисам с животными, войска — по пустым": "Hero on animal oases, troops on empty ones",
+    "Войска и/или герой по оазисам": "Troops and/or hero on oases",
     "Стройка ночью": "Building at night",
     "Строить в ночные часы (sleep_hours). Выкл — пауза стройки ночью": "Build during night hours (sleep_hours). Off = pause building at night",
     "Улучшать войска в кузнице до заданных уровней по приоритету": "Upgrade troops in the smithy to set levels by priority",
@@ -865,10 +871,9 @@ function statusHtml(acc){
 }
 
 const FEATURES = [
-  ["farm_enabled",      "Фарм оазисов",              "Скан и набеги по списку"],
-  ["hero_only",         "Фарм только героем",         "Ранний старт: одна безопасная цель за цикл, войска не тратятся"],
-  ["hero_with_troops",  "Фарм героем + войсками",     "В одном цикле: войска — по пустым оазисам, герой — по оазисам с животными (по силе)"],
-  ["hero_farm_enabled", "Фарм героем (задача)",       "Отдельная задача: герой бьёт оазисы с животными. Порядок настраивается в «Порядок задач»"],
+  ["farm_enabled",      "Фарм только войсками",       "Войска бьют пустые оазисы по списку"],
+  ["hero_only",         "Фарм только героем",         "Герой бьёт оазисы с животными (по силе), войска не трогаем"],
+  ["hero_with_troops",  "Фарм героем и войсками",     "Герой — по оазисам с животными, войска — по пустым"],
   ["build_enabled",      "Стройка",                    "Smart Builder по плану"],
   ["build_night_enabled","Стройка ночью",               "Строить в ночные часы (sleep_hours). Выкл — пауза стройки ночью"],
   ["build_use_ads",      "Стройка с рекламой",          "section2: -25% времени (реклама ~40с, откат на обычную)"],
@@ -891,8 +896,7 @@ const FEATURES = [
 // key должен совпадать с именем задачи в планировщике (runner.py).
 // Срочные задачи (эвазия/скан) сюда не входят — они всегда важнее.
 const TASK_ORDER_META = [
-  ["farm",        "Фарм оазисов",       "Скан и набеги"],
-  ["hero_farm",   "Фарм героем",        "Герой бьёт оазисы с животными"],
+  ["farm",        "Фарм",               "Войска и/или герой по оазисам"],
   ["build",       "Стройка",            "Smart Builder по плану"],
   ["train",       "Тренировка войск",   "Дотренировка до цели"],
   ["tasks",       "Сбор наград",        "Награды за задания"],
@@ -1822,9 +1826,22 @@ async function checkServer() {
   }
 }
 
+// Три режима фарма — взаимоисключающие: включаем один — гасим остальные.
+const FARM_MODES = ["farm_enabled", "hero_only", "hero_with_troops"];
 async function toggleFeature(name, el) {
   // Тумблер применяется МГНОВЕННО — без кнопки "Сохранить настройки"
-  const updates = { features: { [el.dataset.feature]: el.checked } };
+  const key = el.dataset.feature;
+  const updates = { features: { [key]: el.checked } };
+  // radio-логика режимов фарма: включили один — выключаем два других
+  if (FARM_MODES.includes(key) && el.checked) {
+    const card = el.closest(".card");
+    FARM_MODES.forEach(k => {
+      if (k === key) return;
+      updates.features[k] = false;
+      const other = card.querySelector(`[data-feature="${k}"]`);
+      if (other) other.checked = false;
+    });
+  }
   const resp = await fetch(`/api/accounts/${name}/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

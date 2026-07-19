@@ -984,9 +984,21 @@ class FarmManager:
         ВАЖНО: в режиме force_send скан НИКОГДА не запускается —
         эвазия работает только по уже сохранённому списку целей.
         """
-        # Защита на уровне модуля: тумблер GUI уважается даже при
-        # вызове в обход планировщика (menu_manager и т.д.)
-        farm_on = not self.settings_store or self.settings_store.feature('farm_enabled', True)
+        def _feat(name: str) -> bool:
+            return bool(
+                self.settings_store.feature(name, False)
+                if self.settings_store else self.settings.get(name, False)
+            )
+
+        # Три взаимоисключающих режима фарма (тумблеры в GUI, radio-логика):
+        #   troops_only      — войска по пустым оазисам;
+        #   hero_only        — только герой по оазисам с животными;
+        #   hero_with_troops — герой по животным + войска по пустым.
+        # В обход планировщика (menu_manager) считаем троопс-фарм включённым.
+        troops_only = _feat('farm_enabled') if self.settings_store else True
+        hero_only = _feat('hero_only')
+        hero_with_troops = _feat('hero_with_troops')
+        farm_on = troops_only or hero_only or hero_with_troops
         if not force_send and not farm_on:
             logging.info("⏭️ Фарм выключен в настройках — пропуск (скан не запускается).")
             return False
@@ -1020,24 +1032,14 @@ class FarmManager:
             logging.info("⏭️ Списка целей нет, а фарм выключен — скан пропущен.")
             return False
 
-        def _feat(name: str) -> bool:
-            return bool(
-                self.settings_store.feature(name, False)
-                if self.settings_store else self.settings.get(name, False)
-            )
-
-        # Режим "только героем" (ранний старт): вместо волны войск
-        # одна безопасная атака героем по слабому/пустому оазису.
-        # Флаг живёт в features (тумблер в GUI), не в farm-секции.
-        hero_only = _feat("hero_only")
+        # Режим "только героем": вместо волны войск одна безопасная атака
+        # героем по оазису с животными (по силе героя). Войска не трогаем.
         if not force_send and hero_only:
             return self.run_hero_farm()
 
-        # Комбинированный режим "герой + войска": в одном цикле герой ходит
-        # по оазисам С ЖИВОТНЫМИ (безопасно, по силе), а войска — по ПУСТЫМ
-        # оазисам (обычная волна ниже). Это раздельная работа: герой и войска
-        # не пересекаются по целям. Героя отправляем первым (одна атака).
-        hero_with_troops = _feat("hero_with_troops")
+        # Режим "герой + войска": в одном цикле герой ходит по оазисам
+        # С ЖИВОТНЫМИ (по силе), а войска — по ПУСТЫМ (обычная волна ниже).
+        # Цели не пересекаются. Героя отправляем первым (одна атака).
         hero_sent = False
         if not force_send and hero_with_troops:
             logging.info("🦸+🚜 Комбо-фарм: герой — по животным, войска — по пустым.")
