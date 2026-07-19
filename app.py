@@ -341,7 +341,7 @@ async def api_update_account(name: str, data: dict):
         upsert_gui_account(name, {**acc, **patch})
     # settings (farm/training/trade/features) — если переданы
     if "settings" in data and isinstance(data["settings"], dict):
-        allowed_sections = {"features", "farm", "training", "trade", "build", "smithy", "task_order"}
+        allowed_sections = {"features", "farm", "training", "trade", "build", "smithy", "task_order", "night"}
         clean = {k: v for k, v in data["settings"].items()
                  if k in allowed_sections and isinstance(v, dict)}
         if clean:
@@ -489,7 +489,7 @@ async def api_get_settings(name: str):
 
 @app.post("/api/accounts/{name}/settings")
 async def api_save_settings(name: str, updates: dict):
-    allowed_sections = {"features", "farm", "training", "trade", "build", "smithy", "task_order"}
+    allowed_sections = {"features", "farm", "training", "trade", "build", "smithy", "task_order", "night"}
     clean = {k: v for k, v in updates.items() if k in allowed_sections and isinstance(v, dict)}
     if not clean:
         raise HTTPException(status_code=400, detail="Нет валидных настроек")

@@ -1523,6 +1523,22 @@ function renderAccount(acc) {
     ? `<span class="badge" title="Задан в config.yaml">yaml</span>`
     : `<button class="btn-del" onclick="deleteAccount('${esc(acc.name)}')" title="Удалить аккаунт">удалить</button>`;
 
+  // Ночной режим (окно сна). enabled по умолчанию вкл; часы серверные 0–23.
+  const nightCfg = s.night || {};
+  const nightOn = nightCfg.enabled !== false;
+  const nightFields = `
+    <div class="toggle">
+      <label>Ночной режим<small>бот спит в этом окне (кроме ночной стройки/кузницы). Часы серверные, 0–23</small></label>
+      <span class="switch">
+        <input type="checkbox" data-section="night" data-key="enabled" ${nightOn ? "checked" : ""}>
+        <span class="slider" onclick="this.previousElementSibling.click()"></span>
+      </span>
+    </div>
+    <div class="fields">
+      ${fieldHtml("night", "start", "Начало ночи (час)", 1, nightCfg.start ?? 2)}
+      ${fieldHtml("night", "end", "Конец ночи (час)", 1, nightCfg.end ?? 8)}
+    </div>`;
+
   return `
   <section class="card" data-account="${esc(acc.name)}">
     <div class="card-head">
@@ -1535,6 +1551,7 @@ function renderAccount(acc) {
     <div data-stats>${renderStats(acc.stats, acc.name)}</div>
     <div class="sections">
       <div class="section"><h3>Модули (вкл/выкл на лету)</h3><div class="toggles">${toggles}</div></div>
+      <div class="section" style="margin-top:14px"><h3>Ночной режим</h3>${nightFields}</div>
       <div>
         <div class="section" style="margin-bottom:14px"><h3>Фарм</h3><div class="fields">${tribeSel}${farmTroopChecklist}${farmFields}${evadeFields}</div></div>
         <div class="section" style="margin-bottom:14px"><h3>Тренировка</h3><div class="fields">${trainFields}</div>${queueEditor}</div>
@@ -1776,7 +1793,7 @@ async function toggleFeature(name, el) {
 
 async function saveAccount(name, btn) {
   const card = btn.closest(".card");
-  const updates = { features: {}, farm: {}, training: {}, trade: {} };
+  const updates = { features: {}, farm: {}, training: {}, trade: {}, night: {} };
   card.querySelectorAll("[data-feature]").forEach(el => {
     updates.features[el.dataset.feature] = el.checked;
   });

@@ -87,6 +87,13 @@ DEFAULT_SETTINGS = {
         "transfer_interval_min": 60,
         "transfer_rules": [],
     },
+    "night": {
+        # Ночной режим: бот «спит» в этом окне (кроме стройки/кузницы, если
+        # включена «стройка ночью»). Часы серверные, 0-23.
+        "enabled": True,
+        "start": 2,   # начало ночи (час)
+        "end": 8,     # конец ночи (час); при переходе через полночь start > end
+    },
     "task_order": {
         # Порядок выполнения периодических задач (перетаскивается в GUI).
         # Чем выше в списке — тем важнее: задача с меньшим индексом выполнится
@@ -150,6 +157,11 @@ class SettingsStore:
         # нормализуем ключ порога NPC
         if "npc_threshold_pct" not in from_yaml["trade"] and "npc_threshold" in from_yaml["trade"]:
             from_yaml["trade"]["npc_threshold_pct"] = from_yaml["trade"].pop("npc_threshold")
+
+        # Ночное окно: переносим из config.yaml sleep_hours=[start,end], если задано.
+        sh = acc.get("sleep_hours")
+        if isinstance(sh, (list, tuple)) and len(sh) >= 2:
+            from_yaml["night"] = {"enabled": True, "start": int(sh[0]), "end": int(sh[1])}
 
         defaults = _deep_merge(DEFAULT_SETTINGS, from_yaml)
 

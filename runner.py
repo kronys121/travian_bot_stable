@@ -475,9 +475,29 @@ def run_bot(acc_config: dict):
         # Остальные ночью спят.
         _NIGHT_OK_TASKS = ('build', 'smithy', 'village_round')
 
+        def _sleep_hours() -> tuple:
+            """Окно ночного режима из настроек GUI (секция 'night'), на лету.
+            Возвращает (start, end) или () если ночной режим выключен/некорректен."""
+            n = store.section('night')
+            if not n.get('enabled', True):
+                return ()
+            try:
+                s, e = int(n.get('start', 2)) % 24, int(n.get('end', 8)) % 24
+            except (TypeError, ValueError):
+                return ()
+            return () if s == e else (s, e)
+
+        def _refresh_night():
+            """Применяет актуальное окно ночи к config (его читают is_night_time
+            и seconds_until_morning)."""
+            config.sleep_hours = _sleep_hours()
+
+        _refresh_night()
+
         def _guard(task_name, fn):
             """Обёртка: капча-пауза, ночной режим, обновление кук, статус."""
             def wrapped():
+                _refresh_night()  # окно ночи можно менять из GUI на лету
                 # Пауза после капчи — стоп для ВСЕХ задач.
                 if time.time() < _captcha_until[0]:
                     logger.info(f"💤 [{task_name}] пропущена (пауза после капчи).")
@@ -825,6 +845,7 @@ def run_bot(acc_config: dict):
 
         def idle_hook():
             """Между задачами: heartbeat + срочная эвазия + команды из GUI + живой интервал фарма."""
+            _refresh_night()  # окно ночи из GUI на лету
             if _attack_flag.is_set():
                 scheduler.run_now('evade')
             # команды из GUI/Telegram (например, принудительный скан карты)
