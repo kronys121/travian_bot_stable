@@ -236,11 +236,79 @@ PLAN_DEFENSE = [
 ]
 
 # ------------------------------------------------------------------
+# БЫСТРЫЙ СТАРТ x1 — ускоренное сселение 2-й деревни.
+# Приоритет очков культуры (Посольство 24/ур, Рынок 20/ур, Ратуша) +
+# Резиденция 10 + склады под 3 поселенцев. По мотивам rapid-settle гайда
+# (DougProceptra/TravianAssistant): ~500 ЕК, Резиденция 10, 3 поселенца.
+# Праздники (celebrate) и поселенцы (train_settler) выполняют ОТДЕЛЬНЫЕ фичи
+# (Авто-праздники + Тренировка) — execute_plan ключ action не читает, он тут
+# как маркер этапа, в стиле планов x3/gauls_x1.
+# ------------------------------------------------------------------
+PLAN_X1_SETTLE = [
+    # --- Фаза 1: фундамент ---
+    {"location": "dorf2.php", "gid": "15", "name": "Main Building", "target_level": 3},
+    {"location": "dorf1.php", "gid": "1",  "name": "Woodcutters",   "target_level": 2},
+    {"location": "dorf1.php", "gid": "2",  "name": "Clay Pits",     "target_level": 2},
+    {"location": "dorf1.php", "gid": "3",  "name": "Iron Mines",    "target_level": 2},
+    {"location": "dorf1.php", "gid": "4",  "name": "Croplands",     "target_level": 2},
+    {"location": "dorf2.php", "gid": "16", "name": "Rally Point",   "target_level": 1},
+    {"location": "dorf2.php", "gid": "23", "name": "Cranny",        "target_level": 1},
+    {"location": "dorf2.php", "gid": "10", "name": "Warehouse",     "target_level": 3},
+    {"location": "dorf2.php", "gid": "11", "name": "Granary",       "target_level": 3},
+    {"location": "dorf2.php", "gid": "17", "name": "Marketplace",   "target_level": 1},
+    {"location": "dorf2.php", "gid": "18", "name": "Embassy",       "target_level": 1},
+
+    # --- Фаза 2: CP-rush (Посольство/Рынок), поля до 3, ГЗ 5 ---
+    {"location": "dorf1.php", "gid": "1",  "name": "Woodcutters",   "target_level": 3},
+    {"location": "dorf1.php", "gid": "2",  "name": "Clay Pits",     "target_level": 3},
+    {"location": "dorf1.php", "gid": "3",  "name": "Iron Mines",    "target_level": 3},
+    {"location": "dorf1.php", "gid": "4",  "name": "Croplands",     "target_level": 3},
+    {"location": "dorf2.php", "gid": "15", "name": "Main Building", "target_level": 5},
+    {"location": "dorf2.php", "gid": "18", "name": "Embassy",       "target_level": 3},   # ЕК 24/ур
+    {"location": "dorf2.php", "gid": "17", "name": "Marketplace",   "target_level": 3},   # ЕК 20/ур
+    {"location": "dorf2.php", "gid": "23", "name": "Cranny",        "target_level": 3},
+    {"location": "dorf2.php", "gid": "19", "name": "Barracks",      "target_level": 1},
+    {"location": "dorf2.php", "gid": "22", "name": "Academy",       "target_level": 1},
+
+    # --- Фаза 3: Резиденция, поля до 4, ЕК-здания выше, склады ---
+    {"location": "dorf2.php", "gid": "25", "name": "Residence",     "target_level": 1},
+    {"location": "dorf1.php", "gid": "1",  "name": "Woodcutters",   "target_level": 4},
+    {"location": "dorf1.php", "gid": "2",  "name": "Clay Pits",     "target_level": 4},
+    {"location": "dorf1.php", "gid": "3",  "name": "Iron Mines",    "target_level": 4},
+    {"location": "dorf1.php", "gid": "4",  "name": "Croplands",     "target_level": 4},
+    {"location": "dorf2.php", "gid": "17", "name": "Marketplace",   "target_level": 7},
+    {"location": "dorf2.php", "gid": "23", "name": "Cranny",        "target_level": 7},
+    {"location": "dorf2.php", "gid": "10", "name": "Warehouse",     "target_level": 6},
+    {"location": "dorf2.php", "gid": "11", "name": "Granary",       "target_level": 5},
+
+    # --- Фаза 4: поля до 5, Ратуша (нужны ГЗ10 + Академия10), склады под поселенцев ---
+    {"location": "dorf1.php", "gid": "1",  "name": "Woodcutters",   "target_level": 5},
+    {"location": "dorf1.php", "gid": "2",  "name": "Clay Pits",     "target_level": 5},
+    {"location": "dorf1.php", "gid": "3",  "name": "Iron Mines",    "target_level": 5},
+    {"location": "dorf1.php", "gid": "4",  "name": "Croplands",     "target_level": 5},
+    {"location": "dorf2.php", "gid": "15", "name": "Main Building", "target_level": 10},
+    {"location": "dorf2.php", "gid": "22", "name": "Academy",       "target_level": 10},
+    {"location": "dorf2.php", "gid": "24", "name": "Town Hall",     "target_level": 1},
+    {"location": "dorf2.php", "gid": "10", "name": "Warehouse",     "target_level": 12},
+    {"location": "dorf2.php", "gid": "11", "name": "Granary",       "target_level": 8},
+
+    # Праздник №1 (ЕК) — фича «Авто-праздники»
+    {"location": "dorf2.php", "gid": "24", "name": "Town Hall", "target_level": 1, "action": "celebrate"},
+
+    # --- Фаза 5: Резиденция 10 → 3 поселенца → основание 2-й деревни ---
+    {"location": "dorf2.php", "gid": "25", "name": "Residence",  "target_level": 10},
+    {"location": "dorf2.php", "gid": "24", "name": "Town Hall",  "target_level": 1, "action": "celebrate"},
+    {"location": "dorf2.php", "gid": "25", "name": "Residence",  "target_level": 10, "action": "train_settler"},
+    {"location": "dorf2.php", "gid": "24", "name": "Town Hall",  "target_level": 1, "action": "celebrate"},
+]
+
+# ------------------------------------------------------------------
 # Реестр шаблонов — используется GUI и бэкендом.
 # ключ → (название для UI, описание, список шагов)
 # ------------------------------------------------------------------
 TEMPLATES = {
     "x1":        ("Стандарт x1",      "Экономика, поля 5+5, Резиденция. Для обычных серверов.",                    None),
+    "x1_settle": ("Быстрый старт x1", "Приоритет ЕК (Посольство/Рынок/Ратуша) + Резиденция 10 под быстрое сселение 2-й деревни.", PLAN_X1_SETTLE),
     "x3":        ("Non-raid x3/x5",   "Гайд Tikiii971: герой в ресурсы, поля до 3, Ратуша+вечеринка → 2я деревня.", None),
     "gauls_x1":  ("Галлы x1 (Caim)",  "3 Party Farming: Ратуша, Гром, Резиденция 10, поселенцы. Точно по гайду.", PLAN_GAULS_X1),
     "farmer":    ("Фармер",           "Упор на поля и склады. Минимум зданий. Для фарм-деревни.",                  PLAN_FARMER),
