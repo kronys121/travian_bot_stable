@@ -1,4 +1,5 @@
 import logging
+from bs4 import BeautifulSoup
 from utils.base_action import BaseAction
 
 
@@ -99,6 +100,57 @@ class TroopTrainer(BaseAction):
         except Exception as e:
             # -1 = "неизвестно": бот НЕ должен заказывать полную тренировку вслепую
             logging.debug(f"Ошибка чтения войск: {e}")
+            return -1
+
+    def _parse_owned_troops(self, html: str) -> dict | None:
+        """
+        Считает ВСЕ свои войска по типам со страницы обзора точки сбора (tt=1):
+          - дома/в своих оазисах:  table.troop_details[data-did]
+          - в пути (набеги):        table.troop_details.outRaid
+          - возвращаются:           table.troop_details.inReturn
+        В каждой таблице строка с числами — tbody.units.last > tr, ячейки td.unit
+        по порядку (1..10 = tN, 11 = герой); класс none = 0.
+
+        Возвращает {index: total} или None, если таблиц войск на странице нет
+        (страница не та / не прогрузилась) — тогда лучше считать «неизвестно».
+        """
+        soup = BeautifulSoup(html or '', 'html.parser')
+        tables = (soup.select('table.troop_details[data-did]')
+                  + soup.select('table.troop_details.outRaid')
+                  + soup.select('table.troop_details.inReturn'))
+        if not tables:
+            return None
+        totals: dict = {}
+        for table in tables:
+            row = table.select_one('tbody.units.last tr') or table.select_one('tbody.units tr')
+            if not row:
+                continue
+            for i, cell in enumerate(row.select('td.unit')):
+                if 'none' in (cell.get('class') or []):
+                    continue
+                digits = ''.join(c for c in cell.get_text() if c.isdigit())
+                if digits:
+                    totals[i + 1] = totals.get(i + 1, 0) + int(digits)
+        return totals
+
+    def get_owned_count(self, troop_index: int) -> int:
+        """
+        ВСЕГО своих войск типа t{troop_index} = дома + в пути (набеги/возврат).
+        Именно это надо сравнивать с целью тренировки, иначе бот, отправив
+        войска на оазисы, видит «дома 0» и переобучает.
+
+        Возвращает -1, если страницу разобрать не удалось (не заказываем вслепую).
+        """
+        try:
+            self.safe_goto(f"{self.config.base_url}/{self.LOCATORS['rally_troops']}")
+            self.human_sleep(1.0, 2.0)
+            totals = self._parse_owned_troops(self.page.content())
+            if totals is None:
+                logging.info("[Train] Не удалось прочитать обзор войск (tt=1) — пропуск.")
+                return -1
+            return int(totals.get(int(troop_index), 0))
+        except Exception as e:
+            logging.debug(f"get_owned_count error: {e}")
             return -1
 
     def get_max_affordable(self, troop_index: int) -> int:
@@ -329,13 +381,14 @@ class TroopTrainer(BaseAction):
                     )
                     continue
 
-            # Сколько войск уже есть дома
-            current = self.get_current_count(troop_idx)
+            # Всего войск этого типа = дома + в пути (набеги/возврат),
+            # иначе после отправки на оазисы бот видит «дома 0» и переобучает.
+            current = self.get_owned_count(troop_idx)
             if current < 0:
                 logging.info(f"Не удалось определить кол-во войск t{troop_idx}. Пропуск.")
                 continue
 
-            logging.info(f"[{building}] Войск t{troop_idx}: {current}/{target}")
+            logging.info(f"[{building}] Войск t{troop_idx} (всего, вкл. в пути): {current}/{target}")
 
             if current >= target:
                 logging.info(f"t{troop_idx}: цель достигнута.")
