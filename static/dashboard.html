@@ -643,6 +643,52 @@ const T_EN = {
   "http://host:port · http://user:pass@host:port · socks5://host:port (без пароля). SOCKS5 с паролем не поддерживается.":
     "http://host:port · http://user:pass@host:port · socks5://host:port (no password). SOCKS5 with password is not supported.",
 };
+  Object.assign(T_EN, {
+    "Стройка ночью": "Building at night",
+    "Строить в ночные часы (sleep_hours). Выкл — пауза стройки ночью": "Build during night hours (sleep_hours). Off = pause building at night",
+    "Улучшать войска в кузнице до заданных уровней по приоритету": "Upgrade troops in the smithy to set levels by priority",
+    "Улучшение юнитов за рекламу": "Ad-boosted unit upgrade",
+    "Смотреть видео при улучшении в кузнице: -25% времени (реклама ~40с, откат на обычное)": "Watch a video when upgrading in the smithy: -25% time (ad ~40s, falls back to normal)",
+    "Читать отчёты": "Read reports",
+    "Разбор боевых отчётов: добыча, потери, профит по войскам (для панели «Фарм»)": "Battle report parsing: loot, losses, profit by troop (for the “Farm” panel)",
+    "Обход деревень пачкой": "Batched village round",
+    "За один заход в деревню — все действия (стройка, фарм, тренировка, NPC), меньше переключений. Отдельные задачи farm/build/train/npc при этом на паузе": "Everything for a village in one visit (build, farm, train, NPC), fewer switches. Separate farm/build/train/npc tasks are paused",
+    "Скан и набеги": "Scan and raids",
+    "Дотренировка до цели": "Train up to target",
+    "Праздники (Ратуша)": "Celebrations (Town Hall)",
+    "Малый праздник для КО": "Small celebration for CP",
+    "Улучшение войск": "Troop upgrade",
+    "Обмен при переполнении": "Swap on overflow",
+    "Переброска": "Transfer",
+    "Ресурсы между деревнями": "Resources between villages",
+    "Сбор ресурсов/войск/героя": "Collect resources/troops/hero",
+    "Мгновенный вывод войск": "Instant troop pull-out",
+    "Скан всего радиуса вокруг деревни": "Scan the whole radius around the village",
+    "Не тренировать если в очереди >= шт (0 = выкл)": "Don't train if queue >= qty (0 = off)",
+    "Подробнее": "Details",
+    "Пока нет набегов": "No raids yet",
+    "Набегов": "Raids",
+    "Награблено": "Looted",
+    "Юнитов потеряно": "Units lost",
+    "Чистыми": "Net",
+    "Оазисов": "Oases",
+    "Ночной режим": "Night mode",
+    "бот спит в этом окне (кроме ночной стройки/кузницы). Часы серверные, 0–23": "the bot sleeps in this window (except night building/smithy). Server hours, 0-23",
+    "Начало ночи (час)": "Night start (hour)",
+    "Конец ночи (час)": "Night end (hour)",
+    "Экспорт": "Export",
+    "Импорт": "Import",
+    "Порядок задач": "Task order",
+    "Настроить порядок выполнения задач": "Configure task execution order",
+    "Добавить юнит": "Add unit",
+    "Порядок выполнения задач": "Task execution order",
+    "Закрыть": "Close",
+    "Срочные задачи выполняются немедленно по событию и всегда важнее остальных.": "Urgent tasks run immediately on an event and always outrank the rest.",
+    "Обычные задачи — перетащи, чтобы задать порядок": "Regular tasks — drag to set the order",
+    "Задача выше в списке запускается раньше, когда несколько готовы одновременно.": "A task higher in the list runs earlier when several are ready at once.",
+    "Сохранить порядок": "Save order",
+    "срочно": "urgent",
+  });
 // Обратный словарь: game-scraped EN значения -> RU.
 // Применяется когда LANG=ru, но сервер игры отдал название на EN
 // (например международный сервер возвращает "Phalanx" вместо "Фаланга").
@@ -741,7 +787,7 @@ function toggleLang(){
 function applyTheme(light){
   document.documentElement.classList.toggle("light", light);
   const lbl = document.getElementById("theme-label");
-  if (lbl) lbl.textContent = light ? "Ночь" : "День";
+  if (lbl) lbl.textContent = light ? (LANG === "en" ? "Night" : "Ночь") : (LANG === "en" ? "Day" : "День");
 }
 function toggleTheme(){
   const isLight = !document.documentElement.classList.contains("light");
