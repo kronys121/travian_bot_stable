@@ -301,12 +301,12 @@ class StatsCollector:
                         // Чистое имя: берём только название без числа уровня
                         // (Travian пишет "Склад Уровень 8" — убираем числовую часть в конце)
                         let name = nameEl.textContent.replace(/\s+/g, ' ').trim();
-                        // Удаляем ��вост вида " Уровень 8" / " Level 8" / " 8" если он дублирует lvlEl
+                        // Удаляем хвост вида " Уровень 8" / " Level 8" / " 8" если он дублирует lvlEl
                         if (lvlEl && targetLevel !== null) {
                             name = name.replace(lvlEl.textContent.trim(), '').replace(/\s+/g, ' ').trim();
                         }
 
-                        // секунды: атриб��т value таймера (Travian кладёт остаток в секундах)
+                        // секунды: атрибут value таймера (Travian кладёт остаток в секундах)
                         let seconds = null, timer = '';
                         if (timerEl) {
                             const v = timerEl.getAttribute('value');

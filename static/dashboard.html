@@ -522,7 +522,7 @@ const T_EN = {
   // Очередь тренировки
   "Юнит": "Unit", "До шт": "To qty", "Здание": "Building",
   "Казарма": "Barracks", "Конюшня": "Stable",
-  "+ Добавить юнит �� очередь": "+ Add unit to queue",
+  "+ Добавить юнит в очередь": "+ Add unit to queue",
   "Тренировать до, шт": "Train up to, qty",
   "Удалить из очереди": "Remove from queue",
   // Секции
@@ -542,7 +542,7 @@ const T_EN = {
   "Каменная стена": "City Wall", "Пекарня": "Bakery", "Мельница": "Grain Mill",
   "Кирпичный завод": "Brickyard", "Литейный завод": "Iron Foundry",
   "Лесопильный завод": "Sawmill", "Оружейная палата": "Armoury",
-  "Тур��ирная площадь": "Tournament Square",
+  "Турнирная площадь": "Tournament Square",
   // Статусы (герой/аккаунт, game-scraped)
   "дома": "at home", "В деревне": "In village", "в деревне": "in village",
   "в походе": "on adventure", "мёртв": "dead", "мертв": "dead",
@@ -571,7 +571,7 @@ const T_EN = {
   "Излишки из деревни-донора уходят на координаты цели. Резерв — сколько оставить в доноре.":
     "Surplus from the donor village is sent to the target coordinates. Reserve — how much to keep in the donor.",
   "+ Добавить правило": "+ Add rule",
-  "Строительство": "Construction", "Аккаунт": "Account", "Входящ��е атаки": "Incoming attacks",
+  "Строительство": "Construction", "Аккаунт": "Account", "Входящие атаки": "Incoming attacks",
   "Деревня": "Village",
   // Статистика — блок кузницы
   "Кузница": "Smithy", "ничего не улучшается": "nothing upgrading", "Юнит": "Unit",
@@ -584,16 +584,16 @@ const T_EN = {
   // Статистика — герой
   "Уровень": "Level", "Опыт": "Experience", "Статус": "Status",
   "нет данных о герое": "no hero data",
-  // Статистика — пустые сос��ояния
+  // Статистика — пустые состояния
   "очередь пуста": "queue is empty", "нет данных": "no data", "Атак нет": "No attacks",
-  "Пока нет данных — появятся после первого сбора (~30 сек после с��а��та бота).":
+  "Пока нет данных — появятся после первого сбора (~30 сек после старта бота).":
     "No data yet — it will appear after the first collection (~30s after the bot starts).",
   // Модули
-  "Модули (вкл/выкл на ле��у)": "Modules (toggle on the fly)",
+  "Модули (вкл/выкл на лету)": "Modules (toggle on the fly)",
   // Кнопки / статусы аккаунта
   "Старт": "Start", "Стоп": "Stop",
   "Полный скан": "Full scan", "Перескан": "Rescan", "Сброс стройки": "Reset build",
-  "удалить": "delete", "Сохран��ть настройки": "Save settings",
+  "удалить": "delete", "Сохранить настройки": "Save settings",
   "Сохранено — бот применит на следующей задаче": "Saved — the bot will apply on the next task",
   "Применено — бот увидит перед следующей задачей": "Applied — the bot will see it before the next task",
   "Открыть логи →": "Open logs →",
@@ -638,7 +638,7 @@ const T_EN = {
   "Дворец, Ратуша, поля 10+10.": "Palace, Town Hall, fields 10+10.",
   "Казармы / конюшня 20 ур. Максимум войск.": "Barracks / stable lvl 20. Max attack troops.",
   "Казармы / конюшня + стена 20 ур.": "Barracks / stable + wall lvl 20.",
-  "Не строить ничего в этой д��ревне.": "Do not build anything in this village.",
+  "Не строить ничего в этой деревне.": "Do not build anything in this village.",
   "Прокси (необязательно)": "Proxy (optional)", "Добавить": "Add",
   "http://host:port · http://user:pass@host:port · socks5://host:port (без пароля). SOCKS5 с паролем не поддерживается.":
     "http://host:port · http://user:pass@host:port · socks5://host:port (no password). SOCKS5 with password is not supported.",
@@ -648,9 +648,9 @@ const T_EN = {
 // (например международный сервер возвращает "Phalanx" вместо "Фаланга").
 const T_RU = {
   // Войска — Галлы
-  "Phalanx":"Фаланг��","Swordsman":"Мечник","Pathfinder":"Следопыт",
+  "Phalanx":"Фаланга","Swordsman":"Мечник","Pathfinder":"Следопыт",
   "Theutates Thunder":"Тевтатский гром","Druidrider":"Друид-всадник",
-  "Haeduan":"Эдуйская конница","Ram":"Таран","Trebuchet":"Кат��пульта",
+  "Haeduan":"Эдуйская конница","Ram":"Таран","Trebuchet":"Катапульта",
   "Chieftain":"Вождь",
   // Войска — Римляне
   "Legionnaire":"Легионер","Praetorian":"Преторианец","Imperian":"Империанец",
@@ -788,7 +788,7 @@ function importSettings(name){
   };
   input.click();
 }
-// Перевод статуса last_action: сначала точное совпа��ени��,
+// Перевод статуса last_action: сначала точное совпадение,
 // затем разбор шаблона "Префикс: Значение" (напр. "Выполняю: farm").
 function translateStatus(s){
   if (LANG !== "en" || s == null) return s;
@@ -833,7 +833,7 @@ const FEATURES = [
   ["adventure_enabled",    "Приключения героя",          "Авто-отправка героя"],
   ["adv_shorten_enabled",  "Сократить время приключения", "Смотреть видео перед отправкой: -25% времени (1-я фиолетовая кнопка)"],
   ["adv_difficulty_enabled","Повысить сложность приключения","Смотреть видео для апгрейда до сложного уровня (2-я фиолетовая кнопка)"],
-  ["celebration_enabled",  "Авто-праздники (Ратуша)",   "Запускать ма��ый праздник в Ратуше если не идёт — для накопления КО"],
+  ["celebration_enabled",  "Авто-праздники (Ратуша)",   "Запускать малый праздник в Ратуше если не идёт — для накопления КО"],
   ["smithy_enabled",       "Авто-улучшение (Кузница)",  "Улучшать войска в кузнице до заданных уровней по приоритету"],
   ["smithy_use_ads",       "Улучшение юнитов за рекламу", "Смотреть видео при улучшении в кузнице: -25% времени (реклама ~40с, откат на обычное)"],
   ["evasion_enabled",      "Эвазия при атаке",           "Вывод войск при входящей атаке"],
@@ -859,10 +859,10 @@ const TASK_ORDER_META = [
 ];
 const TASK_ORDER_DEFAULT = TASK_ORDER_META.map(x => x[0]);
 
-// Срочные задачи ��� запускаются немедленно по событию и всегда важнее
-// обычных. ��орядок не настраивается, показываем для полноты картины.
+// Срочные задачи — запускаются немедленно по событию и всегда важнее
+// обычных. Порядок не настраивается, показываем для полноты картины.
 const TASK_URGENT_META = [
-  ["evade",  "Эвазия при атаке", "��гновенный вывод войск"],
+  ["evade",  "Эвазия при атаке", "Мгновенный вывод войск"],
   ["scan",   "Полный скан",      "Скан всего радиуса вокруг деревни"],
   ["rescan", "Перескан",         "Быстрый перескан известных оазисов"],
 ];
@@ -889,8 +889,8 @@ const TRIBES = {
   teuton:   ["Дубинщик","Копейщик","Топорщик","Скаут","Паладин","Тевтонская конница","Таран","Катапульта","Вождь","Поселенец"],
   gaul:     ["Фаланга","Мечник","Следопыт","Тевтатский гром","Друид-всадник","Эдуйская конница","Таран","Катапульта","Вождь","Поселенец"],
   egyptian: ["Раб-ополченец","Копейщик","Меченосец","Разведчик на верблюде","Колесница Хепри","Ре-конница","Таран","Катапульта","Номарх","Поселенец"],
-  hun:      ["Наёмник","Лучник","Конный разведчик","Степной всадник","Марсман","Всадник","Таран","Катапульта","Логадес","Пос��ленец"],
-  spartan:  ["Гоплит","Сеннон","Копейщик","Всадник Совета","Коринфский всадник","Всадник Тумана","Таран","Кат��пульта","Эфор","Поселенец"],
+  hun:      ["Наёмник","Лучник","Конный разведчик","Степной всадник","Марсман","Всадник","Таран","Катапульта","Логадес","Поселенец"],
+  spartan:  ["Гоплит","Сеннон","Копейщик","Всадник Совета","Коринфский всадник","Всадник Тумана","Таран","Катапульта","Эфор","Поселенец"],
 };
 const TRIBES_EN = {
   roman:    ["Legionnaire","Praetorian","Imperian","Equites Legati","Equites Imperatoris","Equites Caesaris","Battering Ram","Fire Catapult","Senator","Settler"],
@@ -937,10 +937,10 @@ function onTribeChange(sel) {
   });
 }
 
-// Глобальные параметры тренировки (типы юнитов вынесены в ��чередь ниже)
+// Глобальные параметры тренировки (типы юнитов вынесены в очередь ниже)
   const TRAIN_FIELDS = [
   ["max_batch",        "Макс. за заказ, шт (0 = без лимита)", 5],
-  ["spend_pct",        "Тратить не ��олее, % ресурсов", 5],
+  ["spend_pct",        "Тратить не более, % ресурсов", 5],
   ["min_queue_size",   "Не тренировать если в очереди >= шт (0 = выкл)", 1],
   ];
 
@@ -1003,7 +1003,7 @@ function addQueueRow(btn) {
   const box = btn.closest("[data-queue]");
   const rowEl = btn.closest("[data-queue-row]");
   if (box.querySelectorAll("[data-queue-row]").length <= 1) {
-  // последнюю стро��у не удаляем, просто обнуляем цель
+  // последнюю строку не удаляем, просто обнуляем цель
   rowEl.querySelector(".q-count").value = 0;
   return;
   }
@@ -1319,13 +1319,13 @@ function renderAccount(acc) {
 
   const farmFields  = FARM_FIELDS.map(([k, l, st]) => fieldHtml("farm", k, l, st, (s.farm||{})[k])).join("");
 
-  // Племя аккаунта — определяет имена юнитов в выпа��ающих списках
+  // Племя аккаунта — определяет имена юнитов в выпадающих списках
   const tribe = (s.farm||{}).tribe || "roman";
   const tribeSel = `<div class="field"><label>Племя</label>
     <select data-section="farm" data-key="tribe" onchange="onTribeChange(this)">
       ${Object.keys(TRIBE_LABELS).map(t => `<option value="${t}" ${tribe === t ? "selected" : ""}>${TRIBE_LABELS[t]}</option>`).join("")}
     </select></div>`;
-  // Юниты д��я фарма — чеклист (farm_troop_indices).
+  // Юниты для фарма — чеклист (farm_troop_indices).
   // Фолбэк: если список пуст, отмечаем старый troop_type_index.
   const _savedIndices = Array.isArray((s.farm||{}).farm_troop_indices) && (s.farm||{}).farm_troop_indices.length
     ? (s.farm||{}).farm_troop_indices.map(Number)
@@ -1565,7 +1565,7 @@ function renderAccount(acc) {
         <div class="section" style="margin-bottom:14px"><h3>${t("Стройка")}</h3>${villPlansEditor}</div>
         <div class="section"><h3>Торговля</h3><div class="fields">${npcField}${transferInterval}</div>
           <h4 class="sub-head">Переброска между деревнями</h4>
-          <p class="sub-hint">Излишки из деревни-дон��ра уходят на координаты цели. Резерв — сколько оставить в доноре.</p>
+          <p class="sub-hint">Излишки из деревни-донора уходят на координаты цели. Резерв — сколько оставить в доноре.</p>
           ${transferEditor}</div>
       </div>
     </div>
@@ -1590,7 +1590,7 @@ function renumberTaskOrder(list) {
   let dragEl = null;
   document.addEventListener("dragstart", e => {
     const item = e.target.closest(".task-order-item");
-    if (!item || item.classList.contains("locked")) return;  // срочные не д��игаем
+    if (!item || item.classList.contains("locked")) return;  // срочные не двигаем
     dragEl = item;
     item.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
@@ -1605,7 +1605,7 @@ function renumberTaskOrder(list) {
     if (!over || over === dragEl) return;
     const rect = over.getBoundingClientRect();
     const after = (e.clientY - rect.top) > rect.height / 2;
-    // элемен��ы над курсором сдвигаются, освобождая место для перетаскиваемого
+    // элементы над курсором сдвигаются, освобождая место для перетаскиваемого
     over.parentNode.insertBefore(dragEl, after ? over.nextSibling : over);
     renumberTaskOrder(list);
   });
@@ -1696,7 +1696,7 @@ function forceFarm(name, btn) { return _sendScan(name, btn, "force_farm"); }
 async function resetBuild(name, btn) {
   const q = (LANG === "en")
     ? `Reset build progress for "${name}" to step 1?\nThe bot will run the plan again from the very beginning.`
-    : `Сбросить прогресс стройки для "${name}" на шаг 1?\nБот начнё�� выполнять план заново с самого начала.`;
+    : `Сбросить прогресс стройки для "${name}" на шаг 1?\nБот начнёт выполнять план заново с самого начала.`;
   if (!confirm(q)) return;
   btn.disabled = true;
   const orig = btn.textContent;
@@ -1815,7 +1815,7 @@ async function saveAccount(name, btn) {
   }
   if (v !== null) updates[sec][key] = v;
   });
-  // Собираем farm_troop_indices из чеклиста (отмеченны�� чекбоксы)
+  // Собираем farm_troop_indices из чеклиста (отмеченные чекбоксы)
   const farmTroopCbs = card.querySelectorAll("[data-farm-troop-list] .farm-troop-cb:checked");
   updates.farm.farm_troop_indices = [...farmTroopCbs].map(cb => Number(cb.value));
   // Синхронизируем legacy troop_type_index с первым выбранным юнитом
@@ -1926,7 +1926,7 @@ async function refresh() {
         if (!card) { rendered = false; return; }
         card.querySelector("[data-dot]").className = "dot " + (acc.running ? "on" : "off");
         card.querySelector("[data-status]").innerHTML = statusHtml(acc);
-        // статистика обновляется без перерисовки н��строек (не сбивает ввод)
+        // статистика обновляется без перерисовки настроек (не сбивает ввод)
         const statsEl = card.querySelector("[data-stats]");
         if (statsEl) statsEl.innerHTML = renderStats(acc.stats, acc.name);
         // если состояние запуска сменилось извне — перерисуем кнопки

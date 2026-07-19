@@ -392,7 +392,7 @@ async def api_start(name: str):
     if get_account(name) is None:
         raise HTTPException(404, "Аккаунт не найден")
     if proc_running(name):
-        raise HTTPException(409, "��же запущен из этого GUI")
+        raise HTTPException(409, "Уже запущен из этого GUI")
     if is_alive(load_status(name)):
         raise HTTPException(409, "Бот уже работает (запущен вне GUI, напр. через runner.py)")
     start_account(name)
@@ -407,7 +407,7 @@ async def api_stop(name: str):
 
 @app.post("/api/accounts/{name}/scan")
 async def api_scan(name: str):
-    """П���инудительный полный скан карты: ставит команду в очередь бота."""
+    """Принудительный полный скан карты: ставит команду в очередь бота."""
     if get_account(name) is None:
         raise HTTPException(404, "Аккаунт не найден")
     if not (proc_running(name) or is_alive(load_status(name))):
@@ -518,7 +518,7 @@ async def api_server_check(host: str):
         return {"ok": False, "error": str(e)}
 
 
-# ======= API: ��АСТРОЙКИ =======
+# ======= API: НАСТРОЙКИ =======
 
 @app.get("/api/accounts/{name}/settings")
 async def api_get_settings(name: str):
@@ -562,13 +562,13 @@ async def telegram_miniapp():
 async def account_logs(name: str, lines: int = 150, lang: str = "ru"):
     lang = "en" if lang == "en" else "ru"
     log_lines = translate_logs(get_last_logs(name, lines), lang)
-    # экранируем на случай сп��цсимволов HTML в строках лога
+    # экранируем на случай спецсимволов HTML в строках лога
     from html import escape as _esc
     empty_txt = "Log is empty" if lang == "en" else "Лог пуст"
     log_html = "\n".join(_esc(ln) for ln in log_lines) if log_lines else empty_txt
 
     t = {
-        "ru": {"title": "Логи", "back": "Дашбо��д", "refresh": "автообновление каждые 10 с",
+        "ru": {"title": "Логи", "back": "Дашборд", "refresh": "автообновление каждые 10 с",
                "toggle": "English", "other": "en"},
         "en": {"title": "Logs", "back": "Dashboard", "refresh": "auto-refresh every 10s",
                "toggle": "Русский", "other": "ru"},

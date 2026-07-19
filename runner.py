@@ -252,7 +252,7 @@ def run_bot(acc_config: dict):
         email, password = resolve_credentials(acc_config)
 
         def _do_login():
-            """Полный вход по логину/паролю. Выбрасывает RuntimeError при неудач��."""
+            """Полный вход по логину/паролю. Выбрасывает RuntimeError при неудаче."""
             if not email or not password:
                 raise RuntimeError("Куки устарели, а email/password не заданы (config.yaml или .env).")
             logger.info("Вход по логину/паролю...")
@@ -557,7 +557,7 @@ def run_bot(acc_config: dict):
             """
             Отдельная задача: фарм ТОЛЬКО героем по оазисам с животными
             (безопасно, по силе героя). Войска сюда не входят — за них
-            отвечает задача 'farm'. Порядок и в��л/выкл настраиваются в GUI.
+            отвечает задача 'farm'. Порядок и вкл/выкл настраиваются в GUI.
             """
             for_each_village(lambda vk: farm_manager.run_hero_farm(), "Фарм героем",
                              should_continue=lambda: store.feature('hero_farm_enabled', False))
@@ -741,20 +741,20 @@ def run_bot(acc_config: dict):
         def job_scan():
             """
             Принудительный скан карты (по требованию из GUI/Telegram).
-            Пересканирует оазисы вокруг каждой де��евни и ��бновляет фарм-лист,
-            игн��рируя кулдаун сканирования (force_rescan=True).
+            Пересканирует оазисы вокруг каждой деревни и обновляет фарм-лист,
+            игнорируя кулдаун сканирования (force_rescan=True).
             """
             write_status({'last_action': '🗺️ Принудительный скан карты',
                           'current_village': farm_manager.current_village_id})
             for_each_village(
                 lambda vk: farm_manager.run_farm_cycle(force_rescan=True),
-                "С��ан карты",
+                "Скан карты",
             )
 
         def job_rescan():
             """
             Быстрый перескан ТОЛЬКО известных оазисов (по требованию из GUI/Telegram).
-            Не обходит весь радиус — перепроверяет ��летки, найденные полным сканом.
+            Не обходит весь радиус — перепроверяет клетки, найденные полным сканом.
             В разы быстрее полного скана.
             """
             write_status({'last_action': '♻️ Перескан известных оазисов',
@@ -772,8 +772,8 @@ def run_bot(acc_config: dict):
         def _grouped() -> bool:
             return store.feature('grouped_cycle', False)
 
-        # FIX: без initial_delay next_run = "сейчас", и планировщик выполня��
-        # эвакуа����ию ОДИН раз сразу при старте бота — без всякой атаки.
+        # FIX: без initial_delay next_run = "сейчас", и планировщик выполнял
+        # эвакуацию ОДИН раз сразу при старте бота — без всякой атаки.
         # initial_delay=10**9 гарантирует запуск ТОЛЬКО через run_now.
         scheduler.add('evade',     _guard('evade', job_evade),          interval_sec=10**9, priority=0,
                       initial_delay=10**9)  # только по run_now
@@ -892,7 +892,7 @@ def run_bot(acc_config: dict):
             config.notifier.error(f"{name}: критическая", e)
         finally:
             _stop_monitor.set()
-            write_status({'last_action': '��становлен', 'current_village': '—', 'alive': False})
+            write_status({'last_action': 'Остановлен', 'current_village': '—', 'alive': False})
             browser.close()
             logger.info("🛑 Браузер закрыт.")
 

@@ -134,7 +134,7 @@ class SmartBuilder(BaseAction):
 
     def is_queue_free(self) -> bool:
         """
-        True если в очереди есть свобод��ый слот.
+        True если в очереди есть свободный слот.
         С Travian Plus очередь может содержать 2 постройки одновременно.
         """
         count = self.page.locator(self.LOCATORS['queue']).count()
@@ -209,7 +209,7 @@ class SmartBuilder(BaseAction):
             ''')
             if raw is None:
                 return 10 ** 9
-            # заменяем юникод-минус на обычный, убираем всё кроме цифр �� минуса
+            # заменяем юникод-минус на обычный, убираем всё кроме цифр и минуса
             cleaned = re.sub(r'[^\d-]', '', str(raw).replace('\u2212', '-'))
             if cleaned in ('', '-'):
                 return 10 ** 9
@@ -310,8 +310,8 @@ class SmartBuilder(BaseAction):
                 )
                 return needed
 
-            # Кнопка есть, но парсинг не ��дал��я — считаем что ресурсы нужны
-            logging.info("[build] Кнопки трансфер������ найде��ы, targetResourceAmount не распарсить.")
+            # Кнопка есть, но парсинг не удался — считаем что ресурсы нужны
+            logging.info("[build] Кнопки трансфера найдены, targetResourceAmount не распарсить.")
             return {"lumber": 0, "clay": 0, "iron": 0, "crop": 0}
 
         except Exception as e:
@@ -381,7 +381,7 @@ class SmartBuilder(BaseAction):
                     }
 
                     // Правило 3 УДАЛЕНО: раньше "любая ошибка без слов дерево/глина/железо"
-                    // считалась зерном — это давало ложные сра��атывания на
+                    // считалась зерном — это давало ложные срабатывания на
                     // генеричном "Недостаточно ресурсов".
                     return { blocked: false, rule: 0, errText, upkeep, freeCrop };
                 }
@@ -457,7 +457,7 @@ class SmartBuilder(BaseAction):
 
     def _upgrade_cropland(self) -> bool:
         """
-        Апгрейд самого низкого поля-фермы (gid 4) для у����еличения
+        Апгрейд самого низкого поля-фермы (gid 4) для увеличения
         свободного зерна. Вызывается когда зерна не хватает на постройку.
         Возвращает True, если апгрейд поставлен в очередь.
         """
@@ -536,7 +536,7 @@ class SmartBuilder(BaseAction):
 
                 # ВАЖНО: если слот уже строится (класс underConstruction),
                 # считаем уровень с учётом очереди (+1). Иначе бот, пока идёт
-                # стройк�� 5���������6, видел уровень 5 и ставил ЛИШНИЙ апгрейд 6→7
+                # стройка 5→6, видел уровень 5 и ставил ЛИШНИЙ апгрейд 6→7
                 # во второй слот очереди (премиум позволяет 2 постройки).
                 try:
                     elem_cls = elem.get_attribute('class') or ''
@@ -572,8 +572,8 @@ class SmartBuilder(BaseAction):
                     return ("upgrade", href)
 
             elif is_resource_field:
-                # Шаг пла��а "Woodcutters до 2" = ВСЕ поля этого типа должны быть >= target_lvl.
-                # Шаг считается done только когда каждое поле уже на нужн��м у��овне.
+                # Шаг плана "Woodcutters до 2" = ВСЕ поля этого типа должны быть >= target_lvl.
+                # Шаг считается done только когда каждое поле уже на нужном уровне.
                 # Апгрейдируем по одному за раз — то поле, которое ниже всех (round-robin),
                 # чтобы поднимать все поля равномерно, а не одно до максимума.
                 below_target = [(lvl, href) for lvl, href in existing_levels if lvl < target_lvl]
@@ -864,7 +864,7 @@ class SmartBuilder(BaseAction):
           fillup (.actionButton button:nth-child(1)) как раньше.
         - Если нехватают только отдельные ресурсы — открываем диалог,
           для каждого нужного resourceRowBody нажимаем fillup строки
-          (textButtonV2.buttonFramed.fillup) что��ы взять максимум именно
+          (textButtonV2.buttonFramed.fillup) чтобы взять максимум именно
           этого ресурса, остальные строки не трогаем, затем жмём подтверждение
           (.actionButton .textButtonV2.withLoadingIndicator).
         """
@@ -1027,7 +1027,7 @@ class SmartBuilder(BaseAction):
         if transferred:
             logging.info(f"[inv] Перенесены ресурсы: {', '.join(transferred)}.")
             return True
-        logging.info("[inv] Ничего не пер��несено.")
+        logging.info("[inv] Ничего не перенесено.")
         return False
 
     def _confirm_transfer_dialog(self) -> bool:
@@ -1093,7 +1093,7 @@ class SmartBuilder(BaseAction):
         """
         При ПЕРВОМ просмотре рекламы Travian показывает окно согласия внутри iframe:
         контейнер .buttonWrapper.formV2 c чекбоксом .checkbox — ставим галку,
-        затем жмём кноп��у .textButtonV2.buttonFramed.dialogButtonOk.rectangle.withText.green.
+        затем жмём кнопку .textButtonV2.buttonFramed.dialogButtonOk.rectangle.withText.green.
         Используем _find_in_frames чтобы найти элементы в любом iframe на странице.
         """
         try:
@@ -1101,7 +1101,7 @@ class SmartBuilder(BaseAction):
                 self.LOCATORS['ad_consent_checkbox'], timeout_ms=4000
             )
             if checkbox_loc is None:
-                return  # окно согласия не появилось — пропу���каем
+                return  # окно согласия не появилось — пропускаем
 
             logging.info(f"☑️ Обнаружено окно согласия на рекламу ({where}), принимаю...")
             try:
@@ -1173,7 +1173,7 @@ class SmartBuilder(BaseAction):
 
     def _open_building_contract(self, gid: str) -> bool:
         """
-        Открывает карточку чертежа здания (#contract_building{gid}), п��ребирая
+        Открывает карточку чертежа здания (#contract_building{gid}), перебирая
         вкладки постройки. Нужно, чтобы стала видна кнопка видео-рекламы
         для постройки нового здания через section2.
         """
@@ -1223,7 +1223,7 @@ class SmartBuilder(BaseAction):
     def _click_video_feature_btn(self, gid: str | None = None) -> bool:
         """
         Жмёт фиолетовую кнопку запуска видео-рекламы (videoFeatureButton)
-        внутри section2. Если передан gid — ищет к��опку внутри #contract_buildingN
+        внутри section2. Если передан gid — ищет кнопку внутри #contract_buildingN
         (для build_new), иначе глобально по странице (для upgrade).
         """
         try:
@@ -1333,7 +1333,7 @@ class SmartBuilder(BaseAction):
              ждём прокрутку рекламы → проверяем, началась ли стройка.
           2. Если реклама так и не сработала — откат на обычную стройку (section1).
 
-        Возвращает True, если здание поставлено в очередь любым спосо��ом.
+        Возвращает True, если здание поставлено в очередь любым способом.
         """
         for attempt in range(1, self.AD_MAX_ATTEMPTS + 1):
             # длина очереди ДО клика (замер на странице деревни)
@@ -1358,7 +1358,7 @@ class SmartBuilder(BaseAction):
                 return True
             logging.warning(f"⚠️ После рекламы стройка не началась (попытка {attempt}/{self.AD_MAX_ATTEMPTS}).")
 
-        # реклама не сработала — строим обы��ным способом (section1)
+        # реклама не сработала — строим обычным способом (section1)
         logging.info("↩️ Реклама не сработала — строю обычным способом (section1).")
         self.safe_goto(urljoin(self.page.url, slot_url_part))
         self.human_sleep(1.0, 2.0)
@@ -1366,25 +1366,25 @@ class SmartBuilder(BaseAction):
 
     def execute_plan(self, build_plan: list, start_step: int = None, village_key: str = None) -> int | None:
         """
-        НЕБЛОКИРУЮЩИЙ ре��им стройки.
-        Бот проверяет здания по списку. Если построить прямо сей��ас нельзя
-        (очередь забита или нет ресов) - выходит из функции, чтобы карусе��ь крутилась дальше.
+        НЕБЛОКИРУЮЩИЙ режим стройки.
+        Бот проверяет здания по списку. Если построить прямо сейчас нельзя
+        (очередь забита или нет ресов) - выходит из функции, чтобы карусель крутилась дальше.
 
         Прогресс сохраняется в build_progress_{acc}.json по каждой деревне:
-        при перезапуске бот продолжает с того шага, где о��т��нов��лся,
+        при перезапуске бот продолжает с того шага, где остановился,
         а не проходит весь план с начала.
         start_step, переданный явно, имеет приоритет над сохранённым.
 
         Возвращает:
             int  — секунды до окончания текущей постройки (очередь занята);
                    вызывающий код может передать это значение в scheduler.set_next_run.
-            None — постройка поставлена / нет ресурсов / пла�� завершён.
+            None — постройка поставлена / нет ресурсов / план завершён.
         """
         # Автоподхват сохранённого шага, если не задан явно
         if start_step is None:
             start_step = self.get_saved_step(village_key) if village_key else 1
             if start_step > 1:
-                logging.info(f"💾 ��родолжаю стройку с сохранённого шага {start_step}.")
+                logging.info(f"💾 Продолжаю стройку с сохранённого шага {start_step}.")
 
         logging.info(f"Анализ плана постройки (начиная с шага {start_step})...")
 
@@ -1419,7 +1419,7 @@ class SmartBuilder(BaseAction):
                 if action == "done" or not slot_url_part:
                     # Если уже построено - запоминаем прогресс и идем дальше,
                     # чтобы при перезапуске не перепроверять готовые шаги
-                    logging.info(f"✅ [{step_idx}/{len(build_plan)}] {name} уже на ур����вне {target_level}.")
+                    logging.info(f"✅ [{step_idx}/{len(build_plan)}] {name} уже на уровне {target_level}.")
                     remember(step_idx + 1)
                     continue
 
@@ -1437,9 +1437,9 @@ class SmartBuilder(BaseAction):
                             f"~{secs}с ({int(secs/60)}м {secs%60}с). Передаю время планировщику."
                         )
                     else:
-                        logging.info("⏳ Очередь постройки занята. Перехожу к сле��ующей деревне.")
+                        logging.info("⏳ Очередь постройки занята. Перехожу к следующей деревне.")
                     remember(step_idx)  # при перезапуске продолжим с этого же шага
-                    return secs  # ВЫХОД: планировщик поставит ��ледующий запуск ровно на это время
+                    return secs  # ВЫХОД: планировщик поставит следующий запуск ровно на это время
 
                 # 2. Пытаемся построить
                 def attempt_build():
@@ -1479,12 +1479,12 @@ class SmartBuilder(BaseAction):
                             self._log_contract_resources(name, _missing)
                             return False
 
-                    # Стройка через ��екламу (section2, -25% времени) с откатом
+                    # Стройка через рекламу (section2, -25% времени) с откатом
                     # на обычную (section1) после 3 неудачных попыток.
                     if self.use_ad_boost:
                         return self._build_via_ad_or_fallback(gid, action, slot_url_part, location)
 
-                    # Обычная ст��ойка (реклама вык��ючена в настройках)
+                    # Обычная стройка (реклама выключена в настройках)
                     if action == "upgrade":
                         btn = self.page.locator(self.LOCATORS['upgrade_btn']).first
                         if btn.is_visible() and btn.is_enabled() and 'disabled' not in (
@@ -1526,7 +1526,7 @@ class SmartBuilder(BaseAction):
 
                     # Проверяем блокировку по свободному зерну (прокорм населения).
                     # _is_blocked_by_crop() читает freeCrop и cropConsumptionBig —
-                    # это НЕ то же самое что зе��но в targetResourceAmount.
+                    # это НЕ то же самое что зерно в targetResourceAmount.
                     if self._is_blocked_by_crop():
                         logging.warning(
                             f"⚠️ {name}: блокировка по свободному зерну. "
@@ -1539,7 +1539,7 @@ class SmartBuilder(BaseAction):
                         # ферму улучшить не вышло (нет ресурсов на ферму) —
                         # тогда пробуем пополнить ресурсы обычным путём ниже
 
-                    logging.warning(f"⚠️ Не хват��ет ресурсов для {name}. Пробую пополни��ь...")
+                    logging.warning(f"⚠️ Не хватает ресурсов для {name}. Пробую пополнить...")
                     found_extra = False
 
                     # Пытаемся собрать награды за задания
@@ -1553,7 +1553,7 @@ class SmartBuilder(BaseAction):
 
                     # Если ресурсы нашлись, пробуем еще раз
                     if found_extra:
-                        logging.info("📦 Ресурсы пополнены! Дела�� вторую попытку...")
+                        logging.info("📦 Ресурсы пополнены! Делаю вторую попытку...")
                         self.safe_goto(f"{self.config.base_url}/{location}")
                         self.human_sleep(1.0, 2.0)
 
@@ -1569,7 +1569,7 @@ class SmartBuilder(BaseAction):
                     # Если не вышло (нет ресурсов в ящиках)
                     logging.info(
                         f"💤 Все еще нет ресурсов для {name}. Оставляем деревню копить ресурсы до следующего круга.")
-                    remember(step_idx)  # при пе��езапуске продолжим отсюда
+                    remember(step_idx)  # при перезапуске продолжим отсюда
                     return  # ВЫХОД: Ждем следующего круга карусели
 
             logging.info("🎉 План постройки для этой деревни полностью завершен!")

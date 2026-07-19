@@ -277,7 +277,7 @@ class SmithyUpgrader(SmartBuilder):
         """
         Ищет контейнер строки юнита по onclick="Travian.Game.Manual.open('troop', <ID>)".
         onclick стоит НЕ на .title, а на соседнем элементе (a/span/button).
-        Наход��м этот элемент, поднимаемся к общему контейнеру строки.
+        Находим этот элемент, поднимаемся к общему контейнеру строки.
         """
         abs_id   = self._troop_absolute_id(troop_index)
         selector = f"[onclick*=\"open('troop', {abs_id})\"]"
@@ -296,7 +296,7 @@ class SmithyUpgrader(SmartBuilder):
         except Exception:
             logging.debug("suppressed error in actions/smithy_action:295", exc_info=True)
 
-        # ��апасные варианты — типовые контейнеры строки (по одному, без union).
+        # Запасные варианты — типовые контейнеры строки (по одному, без union).
         for xpath in (
             "xpath=ancestor::tr[1]",
             "xpath=ancestor::li[1]",
@@ -425,7 +425,7 @@ class SmithyUpgrader(SmartBuilder):
     def _click_upgrade_ad(self, troop_index: int) -> bool:
         """
         Нажимает кнопку во втором блоке .cta (улучшение с рекламой, -25% времени).
-        После нажат��я обрабатывает окно согласия и видеоплеер через SmartBuilder.
+        После нажатия обрабатывает окно согласия и видеоплеер через SmartBuilder.
         """
         try:
             btn = self._get_cta_button(troop_index, ad=True)
@@ -433,14 +433,14 @@ class SmithyUpgrader(SmartBuilder):
                 logging.info(f"[Smithy] t{troop_index}: кнопка рекламы не найдена, пробую обычную.")
                 return False
             if not btn.is_visible() or not btn.is_enabled():
-                logging.info(f"[Smithy] t{troop_index}: кнопка рекл��мы недоступна.")
+                logging.info(f"[Smithy] t{troop_index}: кнопка рекламы недоступна.")
                 return False
 
             self.human_click(btn, force=True)
             logging.info(f"[Smithy] t{troop_index}: нажата кнопка рекламы.")
             self.human_sleep(1.2, 2.0)
 
-            # Окно согласия (checkbox + ok.green) — показывается тол��ко 1 раз
+            # Окно согласия (checkbox + ok.green) — показывается только 1 раз
             self._handle_ad_consent()
             # Запуск плеера (play + play_small + mute) через метод SmartBuilder
             self._click_video_feature_btn()
@@ -468,7 +468,7 @@ class SmithyUpgrader(SmartBuilder):
 
         queue = self._get_queue()
         if not queue:
-            logging.info("[Smithy] Очере��ь улучшений пуста.")
+            logging.info("[Smithy] Очередь улучшений пуста.")
             return
 
         if not self._open_smithy():
@@ -502,7 +502,7 @@ class SmithyUpgrader(SmartBuilder):
 
             success = False
             if use_ad:
-                # Сначала пробуем через рекламу, при неудаче — обычный сп��соб
+                # Сначала пробуем через рекламу, при неудаче — обычный способ
                 success = self._click_upgrade_ad(idx)
                 if not success:
                     logging.info(f"[Smithy] t{idx}: реклама недоступна, пробую обычный способ.")

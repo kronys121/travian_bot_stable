@@ -610,7 +610,7 @@ class FarmManager:
 
         hero_power = self.get_hero_power()
         if hero_power <= 0:
-            logging.warning("Не удалось определить силу героя — фарм героем пропущ��н.")
+            logging.warning("Не удалось определить силу героя — фарм героем пропущен.")
             return False
         logging.info(f"Сила героя: {hero_power} | Запас прочности: {safety}%")
 
