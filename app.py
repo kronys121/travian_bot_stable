@@ -74,7 +74,7 @@ def _orphan_pid(name: str) -> int | None:
     if not pf.exists():
         return None
     try:
-        pid = int(pf.read_text().strip())
+        pid = int(pf.read_text(encoding="utf-8").strip())
     except Exception:
         pf.unlink(missing_ok=True)
         return None
@@ -105,7 +105,7 @@ def start_account(name: str) -> bool:
     )
     _processes[name] = proc
     try:
-        _pid_file(name).write_text(str(proc.pid))
+        _pid_file(name).write_text(str(proc.pid), encoding="utf-8")
     except Exception as e:
         logging.debug(f"pid file write: {e}")
     return True

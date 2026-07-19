@@ -1,0 +1,28 @@
+# EditorConfig helps keep a consistent charset/style across editors.
+# https://editorconfig.org  (VS Code, PyCharm, Sublime, etc. respect this.)
+#
+# The most important line here is `charset = utf-8`: the project contains
+# Russian text in comments, log strings and the dashboard UI. If an editor
+# saves these files in a local ANSI codepage (e.g. Windows cp1251) the
+# Cyrillic turns into "" artifacts. This file forces UTF-8 on save.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{py,html,css,js,json,yaml,yml,md,txt,cfg,ini}]
+charset = utf-8
+
+[*.py]
+indent_size = 4
+
+[*.{html,css,js,json,yaml,yml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

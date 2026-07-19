@@ -1,0 +1,27 @@
+# Normalize text files and keep binaries intact.
+# Text sources are UTF-8 with LF endings; this avoids accidental re-encoding
+# that would corrupt the Cyrillic text into "" artifacts.
+
+* text=auto eol=lf
+
+*.py    text
+*.pyw   text
+*.html  text
+*.css   text
+*.js    text
+*.json  text
+*.md    text
+*.txt   text
+*.yaml  text
+*.yml   text
+*.cfg   text
+*.ini   text
+
+# Binary assets - never touch these.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
