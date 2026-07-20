@@ -299,6 +299,8 @@ function accountBlock(a){
     a.infobox.forEach(it=>{
       if(!it.timer&&it.seconds==null) return;
       if(/(новичк|защит|beginner)/i.test(it.label||'')) return;
+      // «Продлить Travian Plus / Золотой клуб» — статус уже показан выше
+      if(/(travian\s*plus|золот\w*\s+клуб|gold\s*club)/i.test(it.label||'')) return;
       const t=it.seconds!=null?fmtDur(it.seconds):(it.timer||'');
       if(t) h+=row(esc(it.label||'—'),`<span class="val">${esc(t)}</span>`);
     });
@@ -398,6 +400,9 @@ function renderSettings(){
 
   // helper: immediate-save toggles call saveFeature('key', this.checked)
   const tf = (id,lbl,sub,key)=>toggleRow(id,lbl,sub,!!feat[key],`saveFeature('${key}',this.checked)`);
+  // взаимоисключающие режимы фарма — включаем один, два других гаснут
+  const fm = (id,lbl,sub,key)=>toggleRow(id,lbl,sub,!!feat[key],`saveFarmMode('${key}',this.checked)`);
+  const night = sets.night || {};
 
   const html = `
     <div class="card">
@@ -414,17 +419,37 @@ function renderSettings(){
       <div class="save-msg" id="s-conn-msg"></div>
 
       <!-- Модули -->
+      <div class="sec-header" style="margin-top:20px">Фарм (выбери один режим)</div>
+      <div>
+        ${fm('f-farm',        'Только войсками',   'Войска по пустым оазисам', 'farm_enabled')}
+        ${fm('f-hero-only',   'Только героем',     'Герой по оазисам с животными', 'hero_only')}
+        ${fm('f-hero-troops', 'Героем и войсками', 'Герой — по животным, войска — по пустым', 'hero_with_troops')}
+      </div>
+
       <div class="sec-header" style="margin-top:20px">Модули</div>
       <div>
-        ${tf('f-farm',    'Фарм оазисов',    'Атаки на оазисы', 'farm_enabled')}
         ${tf('f-build',   'Автостройка',      'По плану постройки', 'build_enabled')}
+        ${tf('f-build-night','Стройка ночью',  'Строить в ночные часы', 'build_night_enabled')}
         ${tf('f-ads',     'Стройка с рекламой', '-25% времени (section2)', 'build_use_ads')}
+        ${tf('f-train',   'Тренировка войск', 'Дотренировка до цели', 'train_enabled')}
+        ${tf('f-smithy',  'Кузница',          'Авто-улучшение войск', 'smithy_enabled')}
         ${tf('f-tasks',   'Задания',          'Ежедневные квесты', 'tasks_enabled')}
         ${tf('f-adv',     'Приключения',      'Герой ходит в приключения', 'adventure_enabled')}
-        ${tf('f-train',   'Тренировка войск', 'Дотренировка до цели', 'train_enabled')}
+        ${tf('f-celebr',  'Праздники',        'Малый праздник в Ратуше (КО)', 'celebration_enabled')}
         ${tf('f-npc',     'NPC-торговля',     'Авто-обмен ресурсов', 'npc_trade_enabled')}
+        ${tf('f-transfer','Переброска',       'Излишки между деревнями', 'transfer_enabled')}
+        ${tf('f-reports', 'Читать отчёты',    'Добыча/потери/профит', 'reports_enabled')}
         ${tf('f-evasion', 'Эвакуация',        'При входящих атаках', 'evasion_enabled')}
+        ${tf('f-grouped', 'Обход пачкой',     'Все действия за один заход в деревню', 'grouped_cycle')}
       </div>
+
+      <!-- Ночной режим -->
+      <div class="sec-header" style="margin-top:20px">Ночной режим</div>
+      ${toggleRow('n-enabled','Включён','бот спит в этом окне (кроме ночной стройки/кузницы)', night.enabled!==false, '')}
+      ${numField('n-start','Начало ночи (час)', night.start??2, 0, 23)}
+      ${numField('n-end','Конец ночи (час)', night.end??8, 0, 23)}
+      <button class="save-btn" onclick="saveNight()" style="margin-top:4px">Сохранить ночной режим</button>
+      <div class="save-msg" id="s-night-msg"></div>
 
       <!-- Фарм -->
       <div class="sec-header" style="margin-top:20px">Настройки фарма</div>
@@ -503,10 +528,38 @@ async function saveFeature(key, value){
   if(!acc) return;
   const sets=acc.settings||{};
   const feat=Object.assign({},sets.features||{},{[key]:value});
+  if(acc.settings) acc.settings.features=feat;   // держим кэш в согласии
   await fetch(`/api/accounts/${encodeURIComponent(_currentAcc)}/settings`,{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({features:feat})
   }).catch(()=>{});
+}
+// три режима фарма взаимоисключающие: включаем один — гасим остальные
+async function saveFarmMode(key, value){
+  const acc=_allAccounts.find(a=>a.name===_currentAcc);
+  if(!acc) return;
+  const feat=Object.assign({},(acc.settings||{}).features||{});
+  feat[key]=value;
+  const MODES={farm_enabled:'f-farm',hero_only:'f-hero-only',hero_with_troops:'f-hero-troops'};
+  if(value){
+    Object.keys(MODES).forEach(k=>{
+      if(k!==key){ feat[k]=false; const el=document.getElementById(MODES[k]); if(el) el.checked=false; }
+    });
+  }
+  if(acc.settings) acc.settings.features=feat;
+  await fetch(`/api/accounts/${encodeURIComponent(_currentAcc)}/settings`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({features:feat})
+  }).catch(()=>{});
+}
+function saveNight(){
+  saveSection({
+    settings:{night:{
+      enabled: document.getElementById('n-enabled').checked,
+      start:   Math.max(0,Math.min(23, parseInt(document.getElementById('n-start').value,10)||0)),
+      end:     Math.max(0,Math.min(23, parseInt(document.getElementById('n-end').value,10)||0)),
+    }}
+  },'s-night-msg');
 }
 function saveFarm(){
   saveSection({
