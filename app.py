@@ -532,7 +532,9 @@ async def api_save_settings(name: str, updates: dict):
     if not clean:
         raise HTTPException(status_code=400, detail="Нет валидных настроек")
     store = get_store(name)
-    store.save(clean)
+    # village_plans / custom_plans — коллекции, которыми полностью управляет GUI:
+    # заменяем целиком, чтобы удаление элемента из дашборда реально применялось.
+    store.save(clean, replace_paths=[("build", "village_plans"), ("build", "custom_plans")])
     return {"ok": True, "settings": store.get_all()}
 
 

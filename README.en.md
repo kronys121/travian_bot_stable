@@ -18,11 +18,16 @@ Account settings: modules toggle on the fly, night mode, farming, per-village tr
 
 ![Account settings](docs/dashboard-settings-en.png)
 
+Custom build-template editor: add buildings, set the target level, drag ⠿ to reorder, tribe-aware (the wall and unique buildings have different IDs per tribe):
+
+![Build template editor](docs/build-editor-en.png)
+
 ## What it can do
 
 Building:
 - Smart plan-based builder (SmartBuilder): keeps the queue full, computes the effective level accounting for a slot already under construction, and never queues a redundant upgrade.
 - Ready-made per-village build templates: standard x1, fast start x1 (focus on culture points and early settling), non-raid x3/x5, Gauls x1, farmer, capital, offense, defense.
+- A custom build-template editor right in the panel: a builder with a list of buildings, target levels and order (drag by ⠿), aware of the different building IDs per tribe.
 - Free-crop check before an upgrade so you do not go negative on upkeep.
 - Building through video ads (section2, minus 25% time), with a fallback to the normal way.
 - Night mode: during set hours the bot sleeps, but building and the smithy can be left running at night.

@@ -78,6 +78,11 @@ DEFAULT_SETTINGS = {
         # Доступные id: x1 | x3 | farmer | capital | offense | defense | none
         # Если деревня не найдена — используется глобальный config.BUILD_PLAN.
         "village_plans": {},
+        # Пользовательские шаблоны застройки, собранные в GUI-редакторе.
+        # { "<id>": {"name": str, "tribe": str,
+        #            "steps": [{"gid": str, "name": str, "target_level": int}]} }
+        # В village_plans такой шаблон назначается значением "custom:<id>".
+        "custom_plans": {},
     },
     "trade": {
         "npc_threshold_pct": 85,
@@ -229,9 +234,20 @@ class SettingsStore:
         with self._lock:
             return json.loads(json.dumps(self._data))
 
-    def save(self, updates: dict):
-        """Накладывает updates и атомарно сохраняет (используется дашбордом)."""
+    def save(self, updates: dict, replace_paths=()):
+        """Накладывает updates и атомарно сохраняет (используется дашбордом).
+
+        replace_paths — список кортежей (секция, ключ). Такие коллекции
+        заменяются целиком, а не сливаются: иначе из GUI нельзя удалить
+        элемент (deep-merge только добавляет/меняет ключи, но не убирает).
+        Дашборд шлёт полный объект для village_plans / custom_plans.
+        """
         with self._lock:
-            self._data = _deep_merge(self._data, updates)
+            merged = _deep_merge(self._data, updates)
+            for sec, key in replace_paths:
+                s = updates.get(sec)
+                if isinstance(s, dict) and key in s:
+                    merged.setdefault(sec, {})[key] = s[key]
+            self._data = merged
             self._write_file(self._data)
             self._mtime = time.time()

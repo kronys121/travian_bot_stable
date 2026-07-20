@@ -229,6 +229,42 @@
   .modal-saved-msg { font-size: 12px; color: var(--ok, #4caf7d); opacity: 0; transition: opacity .2s; }
   .modal-saved-msg.show { opacity: 1; }
 
+  /* --- Редактор своих шаблонов застройки --- */
+  .modal-panel.build-editor { max-width: 580px; }
+  .be-top { display: flex; gap: 8px; margin-bottom: 10px; }
+  .be-top .be-name { flex: 1; }
+  .be-top .be-name, .be-top .be-tribe {
+    background: var(--card-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  }
+  .be-head {
+    display: grid; grid-template-columns: 18px 1fr 92px 26px; gap: 8px; padding: 0 8px 4px;
+    font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .task-steps { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
+  .build-step {
+    display: grid; grid-template-columns: 18px 1fr 92px 26px; gap: 8px; align-items: center;
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  }
+  .build-step.dragging { opacity: .55; border-color: var(--accent); box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .build-step .drag-handle { color: var(--muted); font-size: 15px; cursor: grab; user-select: none; }
+  .build-step .be-building, .build-step .be-level {
+    background: var(--card-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 6px; font-size: 12px; width: 100%;
+  }
+  .build-step .be-building:focus, .build-step .be-level:focus { outline: none; border-color: var(--accent); }
+  .build-step .be-lvl-wrap { display: flex; align-items: center; gap: 4px; }
+  .build-step .be-lvl-wrap label { font-size: 10px; color: var(--muted); }
+  .build-step .q-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+  .build-step .q-del:hover { color: var(--accent); }
+  .custom-plan-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .custom-plan-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  }
+  .custom-plan-name { flex: 1; font-size: 13px; color: var(--text); }
+  .custom-plan-name small { color: var(--muted); font-size: 11px; margin-left: 6px; }
+
   /* --- Секция улучшений кузницы --- */
   .upg-head {
     display: grid;
@@ -951,6 +987,63 @@ const TRIBES_EN = {
   spartan:  ["Hoplite","Sensor","Shieldsman","Twinsteel Therion","Elpida Rider","Corinthian Crusher","Ram","Catapult","Ephor","Settler"],
 };
 
+// ==== Каталог зданий для редактора своих шаблонов застройки ====
+// gid — ID здания в Travian. tribes: не задано = у всех; иначе список племён.
+// Поля ресурсов (1-4) строятся на dorf1, остальное — на dorf2 (это вычисляет бэк).
+const BUILD_CATALOG = [
+  { gid: "1",  ru: "Лесосека",          en: "Woodcutter" },
+  { gid: "2",  ru: "Глиняный карьер",   en: "Clay Pit" },
+  { gid: "3",  ru: "Железный рудник",   en: "Iron Mine" },
+  { gid: "4",  ru: "Ферма",             en: "Cropland" },
+  { gid: "5",  ru: "Лесопилка",         en: "Sawmill" },
+  { gid: "6",  ru: "Кирпичный завод",   en: "Brickyard" },
+  { gid: "7",  ru: "Литейный завод",    en: "Iron Foundry" },
+  { gid: "8",  ru: "Мельница",          en: "Grain Mill" },
+  { gid: "9",  ru: "Пекарня",           en: "Bakery" },
+  { gid: "10", ru: "Склад",             en: "Warehouse" },
+  { gid: "11", ru: "Амбар",             en: "Granary" },
+  { gid: "13", ru: "Кузница",           en: "Smithy" },
+  { gid: "14", ru: "Турнирная площадь", en: "Tournament Square" },
+  { gid: "15", ru: "Главное здание",    en: "Main Building" },
+  { gid: "16", ru: "Пункт сбора",       en: "Rally Point" },
+  { gid: "17", ru: "Рынок",             en: "Marketplace" },
+  { gid: "18", ru: "Посольство",        en: "Embassy" },
+  { gid: "19", ru: "Казарма",           en: "Barracks" },
+  { gid: "20", ru: "Конюшня",           en: "Stable" },
+  { gid: "21", ru: "Мастерская",        en: "Workshop" },
+  { gid: "22", ru: "Академия",          en: "Academy" },
+  { gid: "23", ru: "Тайник",            en: "Cranny" },
+  { gid: "24", ru: "Ратуша",            en: "Town Hall" },
+  { gid: "25", ru: "Резиденция",        en: "Residence" },
+  { gid: "26", ru: "Дворец",            en: "Palace" },
+  { gid: "27", ru: "Сокровищница",      en: "Treasury" },
+  { gid: "28", ru: "Торговая палата",   en: "Trade Office" },
+  { gid: "34", ru: "Каменотёс",         en: "Stonemason" },
+  { gid: "35", ru: "Пивоварня",         en: "Brewery",              tribes: ["teuton"] },
+  { gid: "36", ru: "Капкан",            en: "Trapper",              tribes: ["gaul"] },
+  { gid: "41", ru: "Поилка",            en: "Horse Drinking Trough", tribes: ["roman"] },
+];
+// Стена: реальный gid зависит от племени, но бот всё равно определяет его сам
+// (по DOM/племени) при постройке. В плане храним gid, соответствующий племени.
+const WALL_GID = { roman: "32", teuton: "31", gaul: "33", egyptian: "38", hun: "37", spartan: "33" };
+const WALL_GIDS = new Set(["31", "32", "33", "37", "38"]);
+
+function buildingNameEn(gid) {
+  if (WALL_GIDS.has(String(gid))) return "Wall";
+  const b = BUILD_CATALOG.find(x => x.gid === String(gid));
+  return b ? b.en : "gid" + gid;
+}
+function buildingsForTribe(tribe) {
+  const list = BUILD_CATALOG.filter(b => !b.tribes || b.tribes.includes(tribe));
+  return list.concat([{ gid: "WALL", ru: "Стена", en: "Wall" }]);
+}
+function buildingOptions(tribe, selectedGid) {
+  const sel = WALL_GIDS.has(String(selectedGid)) ? "WALL" : String(selectedGid);
+  return buildingsForTribe(tribe).map(b =>
+    `<option value="${b.gid}" ${b.gid === sel ? "selected" : ""}>${esc(LANG === "en" ? b.en : b.ru)}</option>`
+  ).join("");
+}
+
 function troopName(tribe, idx) {
   const arr = (LANG === "en" ? TRIBES_EN[tribe] : TRIBES[tribe]) || TRIBES.roman;
   return arr[idx - 1] || ((LANG === "en" ? "Unit " : "Юнит ") + idx);
@@ -1469,14 +1562,19 @@ function renderAccount(acc) {
   ];
 
   const savedVillPlans = (s.build || {}).village_plans || {};
+  const customPlans = (s.build || {}).custom_plans || {};
+  // Свои шаблоны добавляем в общий список — они появляются в выпадашке деревни
+  // со звёздочкой; значение "custom:<id>" резолвит бэк.
+  const customTpl = Object.entries(customPlans).map(([id, p]) => ({
+    id: "custom:" + id,
+    label: "★ " + (p.name || id),
+    desc: (LANG === "en" ? "Custom template, " : "Свой шаблон, ") + (t(TRIBE_LABELS[p.tribe] || "") || p.tribe || ""),
+  }));
+  const ALL_TEMPLATES = PLAN_TEMPLATES.concat(customTpl);
   // Если деревень ещё нет в статистике — показываем хотя бы строку «*» (все деревни)
   const planVills = statsVills.length
     ? statsVills.map(v => ({ key: v.name || v.id || "*", label: v.name || v.id || "*" }))
     : [{ key: "*", label: LANG === "en" ? "All villages" : "Все деревни" }];
-
-  const templateOpts = PLAN_TEMPLATES.map(tp =>
-    `<option value="${esc(tp.id)}">${esc(tp.label)}</option>`
-  ).join("");
 
   const villPlanRows = planVills.map(v => {
     const cur = savedVillPlans[v.key] || "";
@@ -1484,18 +1582,30 @@ function renderAccount(acc) {
       <span class="vill-plan-name" title="${esc(v.key)}">${esc(v.label)}</span>
       <select class="vill-plan-sel" data-vill-key="${esc(v.key)}">
         <option value="">${LANG === "en" ? "— use global plan —" : "— глобальный план —"}</option>
-        ${PLAN_TEMPLATES.map(tp =>
+        ${ALL_TEMPLATES.map(tp =>
           `<option value="${esc(tp.id)}" ${cur === tp.id ? "selected" : ""}
-            title="${esc(tp.desc)}">${esc(tp.label)}</option>`
+            title="${esc(tp.desc || "")}">${esc(tp.label)}</option>`
         ).join("")}
       </select>
     </div>`;
   }).join("");
 
+  // Список своих шаблонов с кнопками «изменить/удалить»
+  const customList = Object.entries(customPlans).map(([id, p]) => `
+    <div class="custom-plan-row">
+      <span class="custom-plan-name">★ ${esc(p.name || id)}
+        <small>${esc(t(TRIBE_LABELS[p.tribe] || "") || p.tribe || "")} · ${(p.steps || []).length} ${LANG === "en" ? "steps" : "шаг."}</small></span>
+      <button type="button" class="btn-scan" onclick="openBuildEditor('${esc(acc.name)}','${esc(id)}')">${LANG === "en" ? "Edit" : "Изменить"}</button>
+      <button type="button" class="btn-del" onclick="deleteBuildPlan('${esc(acc.name)}','${esc(id)}')">${LANG === "en" ? "delete" : "удалить"}</button>
+    </div>`).join("");
+
   const villPlansEditor = `
   <h4 class="sub-head">${t("Шаблон застройки по деревням")}</h4>
   <p class="sub-hint">${t("Выбери стратегию для каждой деревни. Бот применит нужный план при следующем запуске стройки.")}</p>
-  <div class="vill-plan-editor" data-vill-plans>${villPlanRows}</div>`;
+  <div class="vill-plan-editor" data-vill-plans>${villPlanRows}</div>
+  <h4 class="sub-head">${LANG === "en" ? "Custom templates" : "Свои шаблоны"}</h4>
+  <div class="custom-plan-list">${customList || `<p class="sub-hint">${LANG === "en" ? "No custom templates yet." : "Пока нет своих шаблонов."}</p>`}</div>
+  <button type="button" class="btn-add-queue" onclick="openBuildEditor('${esc(acc.name)}')">${LANG === "en" ? "+ New template" : "+ Новый шаблон"}</button>`;
 
   // --- Редактор очереди улучшений кузницы ---
   const smithySettings  = s.smithy || {};
@@ -1687,8 +1797,179 @@ function closeTaskOrderModal(el) {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
     document.querySelectorAll("[data-order-modal].open").forEach(m => m.classList.remove("open"));
+    const be = document.getElementById("build-editor");
+    if (be) be.classList.remove("open");
   }
 });
+
+// ============ Редактор своих шаблонов застройки ============
+let BE = { account: null, planId: null };
+
+function beModalEl() {
+  let m = document.getElementById("build-editor");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal-backdrop";
+    m.id = "build-editor";
+    m.onclick = e => { if (e.target === m) closeBuildEditor(); };
+    m.innerHTML = `
+      <div class="modal-panel build-editor">
+        <div class="modal-head">
+          <h3 id="be-title"></h3>
+          <button type="button" class="modal-close" onclick="closeBuildEditor()">×</button>
+        </div>
+        <p class="sub-hint" id="be-hint"></p>
+        <div class="be-top">
+          <input id="be-name" class="be-name">
+          <select id="be-tribe" class="be-tribe" onchange="beChangeTribe()"></select>
+        </div>
+        <div class="be-head"><span></span><span id="be-col-b"></span><span id="be-col-l"></span><span></span></div>
+        <div class="task-steps" data-build-steps id="be-steps"></div>
+        <button type="button" class="btn-add-queue" onclick="beAddStep()" id="be-add"></button>
+        <div class="modal-actions">
+          <button class="save" onclick="beSave()" id="be-save"></button>
+          <button type="button" class="btn-scan" onclick="closeBuildEditor()" id="be-cancel"></button>
+          <span class="modal-saved-msg" id="be-saved"></span>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+  }
+  return m;
+}
+
+function beStepRow(gid, level, tribe) {
+  const lv = Math.max(1, Math.min(20, parseInt(level, 10) || 1));
+  return `<div class="build-step" data-build-step>
+    <span class="drag-handle" draggable="true" aria-hidden="true">⠿</span>
+    <select class="be-building">${buildingOptions(tribe, gid)}</select>
+    <div class="be-lvl-wrap"><label>${LANG === "en" ? "to" : "до"}</label>
+      <input class="be-level" type="number" min="1" max="20" step="1" value="${lv}"></div>
+    <button type="button" class="q-del" onclick="beRemoveStep(this)" title="${LANG === "en" ? "Remove" : "Удалить"}">×</button>
+  </div>`;
+}
+
+function beAddStep() {
+  const tribe = document.getElementById("be-tribe").value || "roman";
+  const box = document.getElementById("be-steps");
+  const tmp = document.createElement("div");
+  tmp.innerHTML = beStepRow("15", 1, tribe);
+  box.appendChild(tmp.firstElementChild);
+}
+
+function beRemoveStep(btn) {
+  const row = btn.closest("[data-build-step]");
+  if (row) row.remove();
+}
+
+function beChangeTribe() {
+  const tribe = document.getElementById("be-tribe").value || "roman";
+  document.querySelectorAll("#be-steps [data-build-step] .be-building").forEach(sel => {
+    sel.innerHTML = buildingOptions(tribe, sel.value);
+  });
+}
+
+function openBuildEditor(accName, planId) {
+  BE.account = accName;
+  BE.planId = planId || null;
+  const m = beModalEl();
+  const acc = (lastAccounts || []).find(a => a.name === accName);
+  const build = (acc && acc.settings && acc.settings.build) || {};
+  const cp = (build.custom_plans || {})[BE.planId] || null;
+  const defTribe = (acc && acc.settings && acc.settings.farm && acc.settings.farm.tribe) || "roman";
+  const tribe = cp ? (cp.tribe || defTribe) : defTribe;
+
+  m.querySelector("#be-title").textContent = LANG === "en" ? "Custom build template" : "Свой шаблон застройки";
+  m.querySelector("#be-hint").textContent = LANG === "en"
+    ? "Add buildings, set target level, drag ⠿ to reorder. Resource fields = all fields of that type."
+    : "Добавляй здания, ставь уровень, тяни за ⠿ для порядка. Поля ресурсов = все поля этого типа.";
+  m.querySelector("#be-name").placeholder = LANG === "en" ? "Template name" : "Название шаблона";
+  m.querySelector("#be-name").value = cp ? (cp.name || "") : "";
+  m.querySelector("#be-col-b").textContent = LANG === "en" ? "Building" : "Здание";
+  m.querySelector("#be-col-l").textContent = LANG === "en" ? "Level" : "Ур.";
+  m.querySelector("#be-add").textContent = LANG === "en" ? "+ Add building" : "+ Добавить здание";
+  m.querySelector("#be-save").textContent = LANG === "en" ? "Save" : "Сохранить";
+  m.querySelector("#be-cancel").textContent = LANG === "en" ? "Cancel" : "Отмена";
+  m.querySelector("#be-saved").textContent = LANG === "en" ? "Saved" : "Сохранено";
+  m.querySelector("#be-tribe").innerHTML = Object.keys(TRIBE_LABELS).map(tk =>
+    `<option value="${tk}" ${tk === tribe ? "selected" : ""}>${esc(t(TRIBE_LABELS[tk]))}</option>`).join("");
+
+  const steps = (cp && Array.isArray(cp.steps) && cp.steps.length) ? cp.steps : [{ gid: "15", target_level: 1 }];
+  document.getElementById("be-steps").innerHTML =
+    steps.map(s => beStepRow(s.gid, s.target_level, tribe)).join("");
+  m.classList.add("open");
+}
+
+function closeBuildEditor() {
+  const m = document.getElementById("build-editor");
+  if (m) m.classList.remove("open");
+}
+
+async function beSave() {
+  const name = document.getElementById("be-name").value.trim();
+  if (!name) { alert(LANG === "en" ? "Enter a template name" : "Впиши название шаблона"); return; }
+  const tribe = document.getElementById("be-tribe").value || "roman";
+  const steps = [];
+  document.querySelectorAll("#be-steps [data-build-step]").forEach(row => {
+    let gid = row.querySelector(".be-building").value;
+    if (gid === "WALL") gid = WALL_GID[tribe] || "32";
+    const lvl = Math.max(1, Math.min(20, parseInt(row.querySelector(".be-level").value, 10) || 1));
+    steps.push({ gid: String(gid), name: buildingNameEn(gid), target_level: lvl });
+  });
+  if (!steps.length) { alert(LANG === "en" ? "Add at least one building" : "Добавь хотя бы одно здание"); return; }
+  const acc = (lastAccounts || []).find(a => a.name === BE.account);
+  const plans = Object.assign({}, (acc && acc.settings && acc.settings.build && acc.settings.build.custom_plans) || {});
+  const id = BE.planId || ("c" + Date.now());
+  plans[id] = { name, tribe, steps };
+  const resp = await fetch(`/api/accounts/${BE.account}/settings`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ build: { custom_plans: plans } }),
+  });
+  if (!resp.ok) { alert((await resp.json()).detail || t("Ошибка сохранения")); return; }
+  BE.planId = id;
+  rendered = false;
+  await refresh();
+  closeBuildEditor();
+}
+
+async function deleteBuildPlan(accName, planId) {
+  if (!confirm(LANG === "en" ? "Delete this custom template?" : "Удалить этот шаблон?")) return;
+  const acc = (lastAccounts || []).find(a => a.name === accName);
+  const plans = Object.assign({}, (acc && acc.settings && acc.settings.build && acc.settings.build.custom_plans) || {});
+  delete plans[planId];
+  const resp = await fetch(`/api/accounts/${accName}/settings`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ build: { custom_plans: plans } }),
+  });
+  if (!resp.ok) { alert((await resp.json()).detail || t("Ошибка")); return; }
+  rendered = false;
+  await refresh();
+}
+
+// Перетаскивание шагов за ⠿ (только ручка draggable, чтобы поля ввода работали)
+(function initBuildStepDnD() {
+  let dragEl = null;
+  document.addEventListener("dragstart", e => {
+    const handle = e.target.closest(".build-step .drag-handle");
+    if (!handle) return;
+    dragEl = handle.closest(".build-step");
+    if (dragEl) dragEl.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+  });
+  document.addEventListener("dragover", e => {
+    const list = e.target.closest("[data-build-steps]");
+    if (!list || !dragEl || !list.contains(dragEl)) return;
+    e.preventDefault();
+    const over = e.target.closest(".build-step");
+    if (!over || over === dragEl) return;
+    const rect = over.getBoundingClientRect();
+    const after = (e.clientY - rect.top) > rect.height / 2;
+    over.parentNode.insertBefore(dragEl, after ? over.nextSibling : over);
+  });
+  document.addEventListener("dragend", () => {
+    if (dragEl) dragEl.classList.remove("dragging");
+    dragEl = null;
+  });
+})();
 
 async function saveTaskOrder(name, btn) {
   const modal = btn.closest("[data-order-modal]");

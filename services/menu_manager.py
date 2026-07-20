@@ -142,6 +142,35 @@ class MenuManager:
         except Exception:
             return None
 
+    @staticmethod
+    def _resolve_custom_plan(store, plan_id: str):
+        """Собирает план из пользовательского шаблона (build.custom_plans[id]).
+
+        Шаги в настройках хранят gid / name / target_level; location
+        (dorf1/dorf2) вычисляем по gid: 1-4 — поля ресурсов, остальное —
+        центр деревни. Возвращает список шагов или None, если шаблона нет.
+        """
+        cp = (store.section('build').get('custom_plans') or {}).get(plan_id)
+        if not cp:
+            return None
+        steps = []
+        for st in (cp.get('steps') or []):
+            gid = str(st.get('gid', '')).strip()
+            if not gid:
+                continue
+            try:
+                lvl = int(st.get('target_level', 1))
+            except (TypeError, ValueError):
+                lvl = 1
+            location = "dorf1.php" if gid in ("1", "2", "3", "4") else "dorf2.php"
+            steps.append({
+                "location": location,
+                "gid": gid,
+                "name": st.get('name') or f"gid{gid}",
+                "target_level": max(1, lvl),
+            })
+        return steps
+
     def _get_build_plan_for_village(self, village_key):
         """
         Возвращает план застройки для деревни.
@@ -180,6 +209,12 @@ class MenuManager:
                         template_id = village_plans[key]
                         matched_key = key
                         break
+
+                if template_id and str(template_id).startswith("custom:"):
+                    plan = self._resolve_custom_plan(store, str(template_id)[len("custom:"):])
+                    if plan is not None:
+                        logging.info(f"[Build] '{matched_key}': свой шаблон ({len(plan)} шагов)")
+                        return plan
 
                 if template_id and template_id in TEMPLATES:
                     plan = get_template_plan(template_id, fallback_x1=PLAN_X1, fallback_x3=PLAN_X3)
