@@ -512,7 +512,14 @@ def run_bot(acc_config: dict):
                     fn()
                 except CaptchaDetectedError:
                     logger.error("💤 CAPTCHA! Пауза 30 минут, отправляю Telegram.")
-                    config.notifier.captcha()
+                    shot = None
+                    try:
+                        from utils.paths import account_dir
+                        shot = str(account_dir(name) / "captcha.png")
+                        farm_manager.page.screenshot(path=shot)
+                    except Exception:
+                        shot = None
+                    config.notifier.captcha(shot)
                     _captcha_until[0] = time.time() + 30 * 60
                     write_status({'last_action': '💤 CAPTCHA — пауза 30 мин', 'current_village': '—'})
                 finally:
@@ -674,9 +681,15 @@ def run_bot(acc_config: dict):
                 return
             smithy_upgrader.run()
 
+        # Состояние алертов: шлём уведомление только на переходе «стало плохо»,
+        # чтобы не спамить каждые 5 минут, пока условие держится.
+        _alert_state = {}
+
         def job_stats():
             """Лёгкий сбор статистики: ресурсы, войска, герой (одна страница)."""
-            stats_collector.collect()
+            from utils.alerts import check_alerts
+            stats = stats_collector.collect()
+            check_alerts(stats, config.notifier, _alert_state)
 
         def job_reports():
             """Читает новые боевые отчёты: добыча, потери, профит по войскам."""

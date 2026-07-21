@@ -4,6 +4,7 @@ import requests
 
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+TELEGRAM_PHOTO_API = "https://api.telegram.org/bot{token}/sendPhoto"
 
 
 class Notifier:
@@ -58,6 +59,26 @@ class Notifier:
 
     # ========== УДОБНЫЕ МЕТОДЫ ==========
 
+    def photo(self, path: str, caption: str = "") -> bool:
+        """Отправляет картинку (например скриншот CAPTCHA) через sendPhoto."""
+        url = TELEGRAM_PHOTO_API.format(token=self.token)
+        cap = f"{self._prefix()} {caption}".strip()
+        try:
+            with self._lock, open(path, "rb") as f:
+                resp = requests.post(
+                    url,
+                    data={"chat_id": self.chat_id, "caption": cap, "parse_mode": "HTML"},
+                    files={"photo": f}, timeout=20,
+                )
+            if resp.ok:
+                logging.info("📨 Telegram фото отправлено.")
+                return True
+            logging.error(f"❌ Ошибка Telegram photo {resp.status_code}: {resp.text}")
+            return False
+        except Exception as e:
+            logging.error(f"❌ Notifier.photo: {e}")
+            return False
+
     def attack(self, coords: tuple, arrival: str, troops_count: str = "?"):
         """Уведомление о входящей атаке."""
         self.send(
@@ -71,9 +92,30 @@ class Notifier:
         """Уведомление о завершении строительства."""
         self.send(f"✅ <b>{building_name}</b> → ур.{level} готово")
 
-    def captcha(self):
-        """Уведомление о CAPTCHA."""
-        self.send("💤 Обнаружена <b>CAPTCHA</b>! Требуется ручной вход.")
+    def captcha(self, screenshot_path: str = None):
+        """Уведомление о CAPTCHA (со скриншотом, если он передан)."""
+        msg = "💤 Обнаружена <b>CAPTCHA</b>! Требуется ручной вход."
+        if screenshot_path and self.photo(screenshot_path, msg):
+            return
+        self.send(msg)
+
+    def hero_died(self):
+        """Герой погиб."""
+        self.send("💀 <b>Герой погиб!</b> Проверь возрождение и шмот.")
+
+    def crop_starving(self, village: str, prod: int):
+        """Отрицательное производство зерна — риск голода."""
+        self.send(
+            f"🌾 <b>Голод по зерну</b> в «{village}»: производство {prod}/ч. "
+            f"Войска/жители могут начать умирать."
+        )
+
+    def storage_full(self, village: str, resource: str):
+        """Склад/амбар переполнен — ресурсы теряются."""
+        self.send(
+            f"📦 <b>Переполнение</b> в «{village}»: {resource}. "
+            f"Ресурсы уходят впустую — включи NPC-обмен или переброску."
+        )
 
     def cropper_found(self, coords: tuple, crop_type: int, distance: float):
         """Уведомление о найденной пятнашке/девятке."""
@@ -98,9 +140,13 @@ class NullNotifier:
     Все вызовы игнорируются без ошибок.
     """
     def send(self, *a, **kw): pass
+    def photo(self, *a, **kw): pass
     def attack(self, *a, **kw): pass
     def building_done(self, *a, **kw): pass
     def captcha(self, *a, **kw): pass
+    def hero_died(self, *a, **kw): pass
+    def crop_starving(self, *a, **kw): pass
+    def storage_full(self, *a, **kw): pass
     def cropper_found(self, *a, **kw): pass
     def no_troops(self, *a, **kw): pass
     def error(self, *a, **kw): pass
