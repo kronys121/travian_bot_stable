@@ -600,10 +600,17 @@ class FarmManager:
         self.update_village_identity()
         safety = max(100, int(self.settings.get("hero_safety_pct", 150) or 150))
         max_dist = float(self.settings.get("max_distance", 0) or 0)
+        min_hp = int(self.settings.get("hero_min_health", 30) or 0)
+
+        # HP-гейт: не гоняем героя в набеги при низком здоровье (может погибнуть).
+        if min_hp > 0 and self.adventure_action is not None \
+                and not self.adventure_action.is_health_ok(min_health=min_hp):
+            logging.info(f"🦸 HP героя ниже {min_hp}% — фарм героем пропущен.")
+            return False
 
         # Приоритет 1: отправить героя в приключение если есть
         if self.adventure_action is not None:
-            hero_went = self.adventure_action.auto_adventure()
+            hero_went = self.adventure_action.auto_adventure(min_health=min_hp or 30)
             if hero_went:
                 logging.info("Герой отправлен в приключение — фарм оазисов пропущен.")
                 return False

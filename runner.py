@@ -655,6 +655,7 @@ def run_bot(acc_config: dict):
             result = adventure_action.auto_adventure(
                 shorten=store.feature('adv_shorten_enabled', False),
                 boost_difficulty=store.feature('adv_difficulty_enabled', False),
+                min_health=int(store.section('farm').get('hero_min_health', 30) or 0),
             )
             # Если auto_adventure вернул число — это cooldown в секундах
             # (duration * 2 + 30с буфер). Передаём в планировщик чтобы

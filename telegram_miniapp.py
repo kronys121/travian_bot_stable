@@ -457,6 +457,7 @@ function renderSettings(){
       ${numField('farm-dist','Макс. расстояние (0 = без лимита)', farm.max_distance||0, 0, 50, 0.5)}
       ${numField('farm-radius','Радиус сканирования', farm.scan_radius||5, 1, 20)}
       ${numField('farm-interval','Интервал фарма (мин)', farm.interval_minutes||60, 5, 360)}
+      ${numField('farm-herohp','Мин. HP героя для фарма/похода, %', farm.hero_min_health??30, 0, 100)}
       ${selField('farm-troop','Тип войск',[
           ['1','1 — Фаланга/Легионер'],
           ['2','2 — Мечник/Преторианец'],
@@ -568,6 +569,7 @@ function saveFarm(){
       max_distance:    parseFloat(document.getElementById('farm-dist').value)||0,
       scan_radius:     parseInt(document.getElementById('farm-radius').value,10)||5,
       interval_minutes:parseInt(document.getElementById('farm-interval').value,10)||60,
+      hero_min_health: parseInt(document.getElementById('farm-herohp').value,10)||0,
       troop_type_index:parseInt(document.getElementById('farm-troop').value,10)||1,
     }}
   },'s-farm-msg');

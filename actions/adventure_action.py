@@ -301,18 +301,20 @@ class HeroAdventure(BaseAction):
         except Exception:
             return False
 
-    def auto_adventure(self, shorten: bool = False, boost_difficulty: bool = False) -> bool:
+    def auto_adventure(self, shorten: bool = False, boost_difficulty: bool = False,
+                       min_health: int = 30) -> bool:
         """
         Отправляет героя в приключение если он дома и здоров.
 
         Args:
             shorten:          смотреть первое видео (сократить время приключения)
             boost_difficulty: смотреть второе видео (повысить до сложного)
+            min_health:       не отправлять, если HP героя ниже этого порога (%)
 
         Возвращает True  — герой отправлен или уже в пути.
         Возвращает False — герой дома, нет приключений или здоровье низкое.
         """
-        if not self.is_health_ok(min_health=30):
+        if not self.is_health_ok(min_health=min_health):
             self.safe_goto(f"{self.config.base_url}/dorf1.php")
             return False
 
