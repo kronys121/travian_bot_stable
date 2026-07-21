@@ -80,6 +80,7 @@ class StatsCollector:
         if prev_smithy is not None:
             stats["smithy"] = prev_smithy
         self._save(stats)
+        self._record_history(stats)
         logging.info(
             "📊 Статистика собрана: "
             f"деревень={len(village_stats)}, "
@@ -530,6 +531,63 @@ class StatsCollector:
             os.replace(tmp, path)
         except Exception as e:
             logging.warning(f"⚠️ Не удалось записать {path}: {e}")
+
+    _HISTORY_CAP = 2000  # ~7 дней при сборе раз в 5 минут
+
+    def _record_history(self, stats: dict):
+        """Дописывает компактный снимок метрик в history.json для аналитики.
+
+        Храним только то, что НЕ пишется больше нигде во времени: суммарные
+        ресурсы/производство по всем деревням, число войск, HP героя, золото.
+        Добыча по дням уже копится в farm_stats, её не дублируем.
+        """
+        try:
+            import os
+            from utils.paths import account_file
+            name = getattr(self.config, 'name', 'bot')
+
+            res = {"wood": 0, "clay": 0, "iron": 0, "crop": 0}
+            prod = {"wood": 0, "clay": 0, "iron": 0, "crop": 0}
+            troops_total = 0
+            for v in stats.get("villages", []):
+                st = (v.get("resources") or {}).get("storage") or {}
+                pr = (v.get("resources") or {}).get("production") or {}
+                for k in res:
+                    res[k] += int(st.get(k, 0) or 0)
+                    prod[k] += int(pr.get(k, 0) or 0)
+                for tr in (v.get("troops") or []):
+                    troops_total += int(tr.get("count", 0) or 0)
+
+            hero = stats.get("hero") or {}
+            acc = stats.get("account") or {}
+            point = {
+                "t": stats.get("updated_at"),
+                "res": res,
+                "prod": prod,
+                "troops": troops_total,
+                "hero_hp": hero.get("health"),
+                "gold": acc.get("gold"),
+                "silver": acc.get("silver"),
+            }
+
+            path = str(account_file(name, 'history'))
+            data = []
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                    if not isinstance(data, list):
+                        data = []
+            except Exception:
+                data = []
+            data.append(point)
+            if len(data) > self._HISTORY_CAP:
+                data = data[-self._HISTORY_CAP:]
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        except Exception as e:
+            logging.debug(f"history record error: {e}")
 
     def save_attacks_only(self):
         """

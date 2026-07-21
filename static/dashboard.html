@@ -1734,7 +1734,8 @@ function renderAccount(acc) {
     <div class="actions">
       <button class="save" onclick="saveAccount('${esc(acc.name)}', this)">Сохранить настройки</button>
       <span class="saved-msg">Сохранено — бот применит на следующей задаче</span>
-      <a class="logs-link" href="/account/${esc(acc.name)}/logs?lang=${LANG}" target="_blank">Открыть логи →</a>
+      <a class="logs-link" href="/account/${esc(acc.name)}/analytics" target="_blank">${LANG==="en"?"Analytics →":"Аналитика →"}</a>
+      <a class="logs-link" href="/account/${esc(acc.name)}/logs?lang=${LANG}" target="_blank">${t("Открыть логи →")}</a>
     </div>
   </section>`;
 }

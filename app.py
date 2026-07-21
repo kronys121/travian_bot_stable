@@ -609,6 +609,28 @@ async def account_farm(name: str):
     return HTMLResponse(content=html.replace("__ACCOUNT__", name))
 
 
+@app.get("/api/accounts/{name}/history")
+async def api_history(name: str):
+    """Временной ряд метрик (ресурсы/производство/войска/герой) для аналитики."""
+    if get_account(name) is None:
+        raise HTTPException(404, "Аккаунт не найден")
+    p = account_file(name, 'history')
+    data = []
+    try:
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        logging.debug("suppressed error: history read", exc_info=True)
+    return JSONResponse(content=data if isinstance(data, list) else [])
+
+
+@app.get("/account/{name}/analytics", response_class=HTMLResponse)
+async def account_analytics(name: str):
+    """Страница аналитики: динамика ресурсов, войск и героя во времени."""
+    html = (Path(__file__).parent / "static" / "analytics.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html.replace("__ACCOUNT__", name))
+
+
 @app.on_event("shutdown")
 def shutdown_processes():
     """При остановке GUI гасим только процессы, запущенные из GUI."""
