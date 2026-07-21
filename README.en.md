@@ -46,6 +46,7 @@ Troops and smithy:
 
 Hero, quests, celebrations:
 - Auto-adventures, optionally with watching a video (to shorten the time or raise the difficulty).
+- Hero HP threshold: a wounded hero is not sent to farm or adventures (configurable).
 - Collecting task rewards and daily quests.
 - Auto-celebrations in the Town Hall for culture points.
 
@@ -54,6 +55,8 @@ Defense and monitoring:
 - Statistics collection: resources, troops, hero, build queue for each village.
 - Battle report parsing: loot by resource, losses, profit by troop type.
 - Farm statistics with net profit (loot minus the cost of lost troops) and a dedicated page with interactive charts.
+- Analytics: resources, production, troops and hero HP over time on a dedicated page.
+- Smart Telegram alerts: a screenshot on CAPTCHA, hero death, crop starvation, storage overflow (no spam - only on transition).
 
 Trading and logistics:
 - NPC exchange when warehouses overflow.
@@ -166,6 +169,7 @@ python main.py --interactive
 - Night mode: the toggle and the hours are set right in the panel.
 - Logs behind a button (`/account/<name>/logs`).
 - Farm statistics with charts (`/account/<name>/farm`): loot by day and resource, profit by troop, top oases, net profit accounting for losses.
+- Analytics (`/account/<name>/analytics`): charts of resources, production, troops and hero HP over time.
 - Telegram mini-app at `/miniapp`.
 
 ## Project layout
@@ -191,7 +195,7 @@ Each account's data lives in `data/<account>/`: cookies, status, statistics, bui
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-The tests cover pure logic without a browser or network: the night window, build template selection, report and oasis parsers, troop counting, the training queue.
+The tests cover pure logic without a browser or network: the night window, build template selection, report and oasis parsers, troop counting, the training queue, smart alerts, and an encoding guard (no broken characters). The same checks run automatically on every push via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## Notes
 
