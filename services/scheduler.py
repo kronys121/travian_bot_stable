@@ -28,14 +28,42 @@ class Scheduler:
         Длинные паузы (интервалы, ночной режим) — забота планировщика.
       - run_now(name) — срочный запуск (например, эвазия при атаке):
         задача выполнится сразу после завершения текущей.
+      - если умер браузер — планировщик НЕ крутится вечно, а выбрасывает
+        исключение наружу: вызывающий закроет браузер и завершит процесс.
+      - если задачи просто падают подряд (сервер недоступен, профилактика) —
+        планировщик уводит все задачи на паузу и продолжает работать.
+        Выходить из процесса тут нельзя: перезапускать бота в проекте некому.
     """
 
-    def __init__(self, logger=None):
+    # Сколько задач подряд может упасть, прежде чем считаем, что сервер лежит.
+    MAX_CONSECUTIVE_FAILURES = 5
+
+    # На сколько разводим все задачи после серии падений.
+    BACKOFF_AFTER_FAILURES = 10 * 60
+
+    # Фразы playwright, означающие «браузер/страница/драйвер мертвы».
+    # Именно фразы, а не отдельные слова: см. комментарий в _looks_like_dead_browser.
+    _DEAD_BROWSER_PHRASES = (
+        'has been closed',            # Target page, context or browser has been closed
+        'target closed',
+        'browser closed',
+        'page closed',
+        'context closed',
+        'connection closed',          # Connection closed while reading from the driver
+        'browser has disconnected',
+    )
+
+    def __init__(self, logger=None, on_fatal=None):
         self.log = logger or logging.getLogger(__name__)
         self.jobs: dict[str, Job] = {}
         self._urgent: list = []            # heap: (priority, seq, name)
         self._seq = itertools.count()
         self._stopped = False
+        # on_fatal(job_name, exc, reason) — вызывается перед тем, как бросить
+        # исключение наружу. Статус-файл и уведомления — забота вызывающего
+        # (runner), планировщик про них ничего не знает.
+        self.on_fatal = on_fatal
+        self._consecutive_failures = 0
 
     def add(self, name, fn, interval_sec, priority=5, enabled_check=None, initial_delay=0):
         job = Job(name, fn, interval_sec, priority, enabled_check)
@@ -59,6 +87,32 @@ class Scheduler:
 
     def stop(self):
         self._stopped = True
+
+    @staticmethod
+    def _looks_like_dead_browser(e: Exception) -> bool:
+        """Похоже, что браузер/страница закрыты — дальше крутиться бессмысленно.
+
+        Тип исключения определяем ПО ИМЕНИ: планировщик не должен тянуть
+        playwright в импорты (он же используется в тестах без браузера).
+        """
+        type_name = type(e).__name__
+        if 'TargetClosedError' in type_name or 'BrowserClosed' in type_name:
+            return True
+        text = str(e).lower()
+        # ФИКС: искать просто 'closed' рядом со словом 'page' нельзя — playwright
+        # подставляет в начало сообщения имя метода ("Page.goto: ..."), поэтому
+        # обычная сетевая ошибка net::ERR_CONNECTION_CLOSED принималась за
+        # мёртвый браузер и убивала процесс. Сверяем целые фразы playwright.
+        return any(p in text for p in Scheduler._DEAD_BROWSER_PHRASES)
+
+    def _fatal(self, job_name: str, e: Exception, reason: str):
+        """Сообщить вызывающему о фатальной ситуации (статус/уведомление — его дело)."""
+        self.log.critical(f"💥 Планировщик остановлен: {reason} (задача [{job_name}]): {e}")
+        if self.on_fatal:
+            try:
+                self.on_fatal(job_name, e, reason)
+            except Exception as ce:
+                self.log.error(f"❌ on_fatal упал: {ce}")
 
     def _pick_next(self):
         """Срочные задачи — первыми; иначе ближайшая по времени (при равенстве — по приоритету)."""
@@ -86,10 +140,37 @@ class Scheduler:
         next_run_before = job.next_run
         try:
             job.fn()
+            self._consecutive_failures = 0
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            self.log.error(f"❌ Задача [{job.name}] упала: {e}")
+            # ФИКС: раньше любое исключение просто гасилось, задача
+            # переставлялась на now+interval, а статус оставался «жив». Когда
+            # умирал Chromium, бот вечно крутил падающие задачи и рапортовал,
+            # что всё хорошо.
+            self._consecutive_failures += 1
+            self.log.error(
+                f"❌ Задача [{job.name}] упала "
+                f"({self._consecutive_failures}/{self.MAX_CONSECUTIVE_FAILURES}): {e}"
+            )
+            if self._looks_like_dead_browser(e):
+                # Единственный по-настоящему невосстановимый случай: страницы
+                # больше нет, продолжать в этом процессе бессмысленно.
+                self._fatal(job.name, e, "браузер закрыт")
+                raise
+            if self._consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                # А вот тут раньше стоял raise — и бот выходил из процесса.
+                # Перезапускать его в проекте некому (app.start_account зовётся
+                # только руками из GUI), поэтому обычная недоступность сервера
+                # или профилактика Travian гасили аккаунт до прихода человека.
+                # Правильнее переждать: разводим все задачи на паузу и живём дальше.
+                self._fatal(job.name, e,
+                            f"{self._consecutive_failures} задач подряд упали — пауза "
+                            f"{self.BACKOFF_AFTER_FAILURES // 60} мин")
+                pause_until = time.time() + self.BACKOFF_AFTER_FAILURES
+                for j in self.jobs.values():
+                    j.next_run = max(j.next_run, pause_until)
+                self._consecutive_failures = 0
         took = time.time() - started
         if job.next_run != next_run_before:
             # set_next_run уже установил нужное время — не трогаем.

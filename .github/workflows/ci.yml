@@ -23,9 +23,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # Только для CI: линтер и HTTP-клиент для fastapi.testclient.
+          # В requirements.txt их нет — боту они не нужны.
+          pip install pyflakes httpx2
 
       - name: Compile all sources (syntax check)
-        run: python -m compileall -q app.py runner.py main.py services actions utils config
+        run: python -m compileall -q app.py runner.py main.py telegram_miniapp.py services actions utils config
+
+      # compileall ловит только синтаксис. Опечатка в имени переменной
+      # (undefined name) — валидный синтаксис, и такая ошибка уже уезжала
+      # в master: `last_missing` вместо `self._last_missing` убивал всю
+      # ветку докупки ресурсов в SmartBuilder, а CI был зелёный.
+      - name: Lint (pyflakes — undefined names, unused imports)
+        run: python -m pyflakes app.py runner.py main.py telegram_miniapp.py services actions utils config tests tools
 
       - name: Run unit tests + encoding guard
         run: python -m unittest discover -s tests -p "test_*.py" -v

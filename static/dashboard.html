@@ -467,7 +467,7 @@
     <div class="field">
     <label for="new-proxy">Прокси (необязательно)</label>
     <input id="new-proxy" placeholder="http://user:pass@host:port">
-    <small class="form-hint">http://host:port · http://user:pass@host:port · socks5://host:port (без пароля). SOCKS5 с паролем не поддерживается.</small>
+    <small class="form-hint">http://host:port · http://user:pass@host:port · socks5://host:port · socks5://user:pass@host:port</small>
     </div>
     <div class="field">
       <label>&nbsp;</label>
@@ -482,6 +482,36 @@
 </section>
 
 <script>
+// ===== Доступ по токену (DASHBOARD_TOKEN в .env) =====
+// Страница открывается прямо в браузере, поэтому токен приходит в адресной
+// строке: http://localhost:8080/?token=... Один раз заворачиваем fetch, чтобы
+// ВСЕ запросы к /api несли заголовок X-Auth-Token, и дописываем токен в
+// переходы на /account/... — иначе после включения токена дашборд получал 401
+// на каждый XHR и выглядел пустым.
+(function () {
+  const token = new URLSearchParams(location.search).get("token");
+  if (!token) return;
+  const origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = Object.assign({}, init);
+    const headers = new Headers(init.headers || {});
+    headers.set("X-Auth-Token", token);
+    init.headers = headers;
+    return origFetch.call(this, input, init);
+  };
+  document.addEventListener("click", function (e) {
+    const a = e.target && e.target.closest && e.target.closest("a[href]");
+    if (!a) return;
+    const href = a.getAttribute("href") || "";
+    if (!href.startsWith("/") || href.startsWith("//")) return;
+    const u = new URL(href, location.origin);
+    if (!u.searchParams.has("token")) {
+      u.searchParams.set("token", token);
+      a.setAttribute("href", u.pathname + u.search + u.hash);
+    }
+  }, true);
+})();
+
 // ===== i18n: переключатель языка меню (RU -> EN) =====
 let LANG = localStorage.getItem("ui_lang") === "en" ? "en" : "ru";
 const T_EN = {
@@ -676,8 +706,8 @@ const T_EN = {
   "Казармы / конюшня + стена 20 ур.": "Barracks / stable + wall lvl 20.",
   "Не строить ничего в этой деревне.": "Do not build anything in this village.",
   "Прокси (необязательно)": "Proxy (optional)", "Добавить": "Add",
-  "http://host:port · http://user:pass@host:port · socks5://host:port (без пароля). SOCKS5 с паролем не поддерживается.":
-    "http://host:port · http://user:pass@host:port · socks5://host:port (no password). SOCKS5 with password is not supported.",
+  "http://host:port · http://user:pass@host:port · socks5://host:port · socks5://user:pass@host:port":
+    "http://host:port · http://user:pass@host:port · socks5://host:port · socks5://user:pass@host:port",
 };
   Object.assign(T_EN, {
     "Фарм только войсками": "Troops-only farming",

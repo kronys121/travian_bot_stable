@@ -1,12 +1,14 @@
 import time
 import random
 import logging
-import json
 import math
 import requests
 from bs4 import BeautifulSoup
 
 from actions.farm_stats import FarmStats
+from utils.exceptions import CaptchaDetectedError
+from utils.jsonio import file_lock, read_json, write_json
+from utils.paths import account_file
 
 
 class FarmManager:
@@ -67,26 +69,40 @@ class FarmManager:
     def _acc_name(self) -> str:
         return getattr(self.config, 'name', 'bot')
 
-    def _file(self, base: str) -> str:
-        """Файлы данных per-account, чтобы процессы не перетирали друг друга."""
-        return f"{base}_{self._acc_name()}.json"
+    def _file(self, kind: str):
+        """
+        Файлы данных per-account: data/<acc>/<kind>.json.
+
+        FIX: раньше здесь строилось имя вида "cooldowns_<acc>.json" в КОРНЕ
+        репозитория — мимо utils.paths, поэтому дашборд их не видел.
+        account_file() сам переносит старый файл из корня при первом обращении.
+        """
+        return account_file(self._acc_name(), kind)
 
     def _load_cooldowns(self) -> dict:
-        try:
-            with open(self._file("cooldowns"), "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-        except Exception:
-            logging.debug("suppressed error in actions/oasis_action:74", exc_info=True)
-        return {}
+        data = read_json(self._file("cooldowns"), {})
+        return data if isinstance(data, dict) else {}
 
     def _save_cooldowns(self):
-        try:
-            with open(self._file("cooldowns"), "w", encoding="utf-8") as f:
-                json.dump(self.cooldowns, f, ensure_ascii=False)
-        except Exception as e:
-            logging.debug(f"Не удалось сохранить кулдауны: {e}")
+        # FIX: запись атомарная (tmp + os.replace) — оборванный json.dump
+        # оставлял битый файл, и бот сразу слал повторные набеги.
+        write_json(self._file("cooldowns"), self.cooldowns)
+
+    def _scan_ts_key(self) -> str:
+        # Метка времени последнего полного скана живёт в том же файле, что и
+        # кулдауны (ключ с префиксом __scan__ не может совпасть с координатным).
+        return f"__scan__{self.current_village_id}"
+
+    def _mark_scan_done(self):
+        self.cooldowns[self._scan_ts_key()] = time.time()
+        self._save_cooldowns()
+
+    def _scan_is_stale(self) -> bool:
+        """Прошло ли достаточно времени с последнего полного скана радиуса."""
+        hours = float(self.settings.get("rescan_interval_hours", 6) or 0)
+        if hours <= 0:
+            return True
+        return (time.time() - float(self.cooldowns.get(self._scan_ts_key(), 0) or 0)) >= hours * 3600
 
     def _refresh_settings(self):
         """Подтягивает живые настройки фарма из SettingsStore (GUI)."""
@@ -182,35 +198,25 @@ class FarmManager:
 
     # --- JSON ------------------------------------------------------
 
-    def _save_to_json(self, filename: str, village_key: str, data: list):
-        all_data = {}
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    all_data = loaded
-        except Exception:
-            logging.debug("suppressed error in actions/oasis_action:186", exc_info=True)
-        all_data[village_key] = data
-        try:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(all_data, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            logging.error(f"❌ Ошибка сохранения {filename}: {e}")
+    def _save_to_json(self, path, village_key: str, data: list):
+        """Обновляет секцию одной деревни в общем файле (read-modify-write)."""
+        # Блокировка на путь: чтение+запись должны быть неделимы, иначе
+        # соседний поток успевал вклиниться между ними и терял свою деревню.
+        with file_lock(path):
+            loaded = read_json(path, {})
+            all_data = loaded if isinstance(loaded, dict) else {}
+            all_data[village_key] = data
+            write_json(path, all_data, indent=4)
 
     def load_saved_oases(self) -> bool:
         self.update_village_identity()
-        try:
-            with open(self._file("unoccupied_oases"), "r", encoding="utf-8") as f:
-                all_data = json.load(f)
-            if isinstance(all_data, dict) and self.current_village_id in all_data:
-                self.farm_list = all_data[self.current_village_id]
-                return bool(self.farm_list)
-            if isinstance(all_data, list):
-                self.farm_list = all_data
-                return bool(self.farm_list)
-        except Exception:
-            logging.debug("suppressed error in actions/oasis_action:206", exc_info=True)
+        all_data = read_json(self._file("unoccupied_oases"))
+        if isinstance(all_data, dict) and self.current_village_id in all_data:
+            self.farm_list = all_data[self.current_village_id]
+            return bool(self.farm_list)
+        if isinstance(all_data, list):
+            self.farm_list = all_data
+            return bool(self.farm_list)
         self.farm_list = []
         return False
 
@@ -294,6 +300,11 @@ class FarmManager:
         Создаёт requests.Session с куками из браузера.
         Используется для прямых API-запросов без участия браузера —
         навигация страницы вообще не влияет.
+
+        ВАЖНО: сессия обязана идти через тот же прокси, что и браузер.
+        Раньше не шла: полный скан карты — это сотни POST-запросов к
+        /api/v1/map/tile-details с куками аккаунта, и все они уходили
+        с настоящего IP машины, пока браузер сидел за прокси.
         """
         session = requests.Session()
         try:
@@ -302,8 +313,18 @@ class FarmManager:
                 session.cookies.set(c['name'], c['value'], domain=c.get('domain', ''))
         except Exception as e:
             logging.warning(f"⚠️ Не удалось скопировать куки: {e}")
+
+        proxies = getattr(self.config, 'requests_proxies', None)
+        if proxies:
+            session.proxies.update(proxies)
+
+        # User-Agent берём тот же, что у браузера аккаунта. Захардкоженная
+        # строка ниже была ещё и обрезанной (без Chrome/Safari), то есть
+        # прямые запросы выглядели иначе, чем всё остальное с этой сессии.
         session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': getattr(self.config, 'user_agent', None)
+                          or 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                             ' (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
         })
@@ -344,6 +365,7 @@ class FarmManager:
 
         current_farm_list, occupied_oases, found_croppers = [], [], []
         scanned_count = 0
+        errors = 0
 
         for dx in range(-radius, radius + 1):
             for dy in range(-radius, radius + 1):
@@ -358,6 +380,8 @@ class FarmManager:
                     logging.info(f"⏳ Просканировано {scanned_count} клеток...")
 
                 status = self._fetch_tile(session, target_x, target_y)
+                if status.get("error"):
+                    errors += 1
                 self._classify_tile(status, target_x, target_y, distance,
                                     current_farm_list, occupied_oases, found_croppers)
 
@@ -373,6 +397,16 @@ class FarmManager:
         self._save_to_json(self._file("unoccupied_oases"), self.current_village_id, current_farm_list)
         self._save_to_json(self._file("occupied_oases"),   self.current_village_id, sorted_occupied)
         self._save_to_json(self._file("croppers"),          self.current_village_id, found_croppers)
+        # Метку «скан выполнен» ставим ТОЛЬКО если сервер вообще отвечал.
+        # Иначе скан на протухших куках (все клетки — ошибка) заблокировал бы
+        # повторную попытку на rescan_interval_hours, и фарм молча стоял бы часами.
+        if scanned_count and errors >= scanned_count:
+            logging.warning(
+                f"📡 Скан: ни одна из {scanned_count} клеток не ответила — "
+                f"метка последнего скана не обновлена, попробуем в следующем цикле."
+            )
+        else:
+            self._mark_scan_done()
 
     def _classify_tile(self, status: dict, tx: int, ty: int, distance: float,
                        farm_list: list, occupied: list, croppers: list):
@@ -466,8 +500,11 @@ class FarmManager:
 
         farm_list, occupied_oases, found_croppers = [], [], []
         done = 0
+        errors = 0
         for (tx, ty), distance in known.items():
             status = self._fetch_tile(session, tx, ty)
+            if status.get("error"):
+                errors += 1
             self._classify_tile(status, tx, ty, distance,
                                 farm_list, occupied_oases, found_croppers)
             done += 1
@@ -476,11 +513,22 @@ class FarmManager:
             time.sleep(random.uniform(0.4, 0.9))
 
         farm_list.sort(key=lambda o: o.get('distance', 999))
-        self.farm_list = farm_list
         sorted_occupied = sorted(occupied_oases, key=lambda o: (o['def_inf'], o.get('distance', 999)))
         found_croppers.sort(key=lambda o: (o.get('distance', 999), -o.get('type', 0)))
 
         self.is_scanning = False
+
+        # FIX: клетка с ошибкой запроса просто выпадала из результата, а списки
+        # перезаписывались целиком — при протухших куках перескан стирал ВЕСЬ
+        # фарм-лист. Есть ошибки — ничего не сохраняем, работаем по старым спискам.
+        if errors:
+            logging.warning(
+                f"♻️ Перескан: {errors} из {len(known)} клеток не ответили — "
+                f"списки НЕ перезаписаны (иначе потеряли бы цели)."
+            )
+            return
+
+        self.farm_list = farm_list
         logging.info(f"🏁 Перескан завершён! Пустых: {len(farm_list)} | Занятых: {len(occupied_oases)}")
         self._save_to_json(self._file("unoccupied_oases"), self.current_village_id, farm_list)
         self._save_to_json(self._file("occupied_oases"),   self.current_village_id, sorted_occupied)
@@ -488,15 +536,11 @@ class FarmManager:
 
     def _load_list(self, kind: str) -> list:
         """Загружает список клеток текущей деревни из JSON-файла (occupied/unoccupied/croppers)."""
-        try:
-            with open(self._file(kind), "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                return data.get(self.current_village_id, [])
-            if isinstance(data, list):
-                return data
-        except Exception:
-            logging.debug("suppressed error in actions/oasis_action:527", exc_info=True)
+        data = read_json(self._file(kind))
+        if isinstance(data, dict):
+            return data.get(self.current_village_id, [])
+        if isinstance(data, list):
+            return data
         return []
 
     # --- ГЕРОЙ -----------------------------------------------------
@@ -566,22 +610,15 @@ class FarmManager:
                 ''') or 0
 
             return int(power)
+        except CaptchaDetectedError:
+            raise  # капчу глушить нельзя — её обрабатывает runner
         except Exception as e:
             logging.debug(f"hero power error: {e}")
             return 0
 
     def load_occupied_oases(self) -> list:
         """Список занятых животными оазисов текущей деревни (со скана)."""
-        try:
-            with open(self._file("occupied_oases"), "r", encoding="utf-8") as f:
-                all_data = json.load(f)
-            if isinstance(all_data, dict):
-                return all_data.get(self.current_village_id, [])
-            if isinstance(all_data, list):
-                return all_data
-        except Exception:
-            logging.debug("suppressed error in actions/oasis_action:611", exc_info=True)
-        return []
+        return self._load_list("occupied_oases")
 
     def run_hero_farm(self) -> bool:
         """
@@ -608,13 +645,10 @@ class FarmManager:
             logging.info(f"🦸 HP героя ниже {min_hp}% — фарм героем пропущен.")
             return False
 
-        # Приоритет 1: отправить героя в приключение если есть
-        if self.adventure_action is not None:
-            hero_went = self.adventure_action.auto_adventure(min_health=min_hp or 30)
-            if hero_went:
-                logging.info("Герой отправлен в приключение — фарм оазисов пропущен.")
-                return False
-
+        # FIX: отсюда убран запуск приключения. Он игнорировал тумблер
+        # adventure_enabled и настройки shorten/boost_difficulty — приключениями
+        # владеет задача 'adventure' планировщика (runner.py). Здесь достаточно
+        # проверить, что герой дома: если он в пути, attack_oasis вернёт NO_TROOPS.
         hero_power = self.get_hero_power()
         if hero_power <= 0:
             logging.warning("Не удалось определить силу героя — фарм героем пропущен.")
@@ -722,8 +756,16 @@ class FarmManager:
             return "COOLDOWN"
 
         logging.info(f"⚔️ Набег на ({target_x}|{target_y}) юнитами t{troop_type_index}...")
-        self.page.goto(f"{self.config.base_url}/{self.LOCATORS['rally_point_send']}")
-        self.page.wait_for_load_state('domcontentloaded')
+        # FIX: навигация была ВНЕ try — любая ошибка перехода улетала наверх
+        # и обрывала весь фарм-круг (остальные цели, статистика, чистка списка).
+        try:
+            self.page.goto(f"{self.config.base_url}/{self.LOCATORS['rally_point_send']}")
+            self.page.wait_for_load_state('domcontentloaded')
+        except CaptchaDetectedError:
+            raise  # капчу глушить нельзя — её обрабатывает runner
+        except Exception as e:
+            logging.error(f"❌ Не удалось открыть точку сбора для ({target_x}|{target_y}): {e}")
+            return "ERROR"
         time.sleep(random.uniform(1.5, 2.5))
 
         # ── СВЕЖАЯ ПРОВЕРКА ЖИВОТНЫХ прямо перед отправкой ──
@@ -812,6 +854,8 @@ class FarmManager:
                 logging.warning("⚠️ Кнопка подтверждения не найдена.")
                 return "ERROR"
 
+        except CaptchaDetectedError:
+            raise  # капчу глушить нельзя — её обрабатывает runner
         except Exception as e:
             logging.error(f"❌ Ошибка атаки: {e}")
             return "ERROR"
@@ -860,9 +904,14 @@ class FarmManager:
             # Заполняем КАЖДЫЙ тип юнитов максимумом.
             # Максимум берём из ссылки/текста "/ N" рядом с полем ввода —
             # это стандартная разметка формы отправки войск Travian.
-            filled = self.page.evaluate(r'''
+            # FIX (тихая потеря армии): разделитель тысяч заменялся ПРОБЕЛОМ,
+            # и якорь /\/?\s*(\d+)\s*$/ ловил только хвост: "1.250" -> 250.
+            # Теперь разделители вырезаются полностью (как в
+            # services/troop_trainer.py:172), а разбор по типам идёт в лог.
+            parsed = self.page.evaluate(r'''
                 () => {
                     let total = 0;
+                    const units = [];
                     document.querySelectorAll(
                         'input[name^="troop"], input[name^="troops"]'
                     ).forEach(inp => {
@@ -873,8 +922,8 @@ class FarmManager:
                         if (cell) {
                             const link = cell.querySelector('a');
                             const src = link ? link.textContent : cell.textContent;
-                            const m = String(src).replace(/[\u00A0\s.,]/g, ' ').match(/\/?\s*(\d+)\s*$/) ||
-                                      String(src).match(/(\d+)/);
+                            const clean = String(src).replace(/[\u00A0\s.,]/g, '');
+                            const m = clean.match(/\/?(\d+)$/) || clean.match(/(\d+)/);
                             if (m) max = parseInt(m[1], 10) || 0;
                         }
                         if (max > 0) {
@@ -884,11 +933,15 @@ class FarmManager:
                             inp.dispatchEvent(new Event('input', { bubbles: true }));
                             inp.dispatchEvent(new Event('change', { bubbles: true }));
                             total += max;
+                            units.push(inp.name + '=' + max);
                         }
                     });
-                    return total;
+                    return { total: total, units: units };
                 }
-            ''')
+            ''') or {}
+
+            filled = int(parsed.get('total') or 0)
+            detail = ", ".join(parsed.get('units') or [])
 
             if not filled:
                 logging.warning("🏃 Эвакуация: в деревне нет войск для увода.")
@@ -908,10 +961,15 @@ class FarmManager:
             confirm = self.page.locator(self.LOCATORS['raid_confirm_btn']).first
             if confirm.is_visible():
                 confirm.click()
-                logging.info(f"✅ ЭВАКУАЦИЯ: ~{filled} юнитов уведено → ({tx}|{ty}). Вернутся сами.")
+                logging.info(
+                    f"✅ ЭВАКУАЦИЯ: ~{filled} юнитов уведено → ({tx}|{ty}). "
+                    f"Вернутся сами. Разбор по типам: {detail or '—'}"
+                )
                 return "SUCCESS"
             logging.warning("🏃 Эвакуация: кнопка подтверждения не найдена.")
             return "ERROR"
+        except CaptchaDetectedError:
+            raise  # капчу глушить нельзя — её обрабатывает runner
         except Exception as e:
             logging.error(f"❌ Эвакуация не удалась: {e}")
             return "ERROR"
@@ -975,6 +1033,8 @@ class FarmManager:
                     "⚠️ Не удалось прочитать домашние войска (tt=1) — "
                     "фарм по старой логике (без проверки запаса)."
                 )
+        except CaptchaDetectedError:
+            raise  # капчу глушить нельзя — её обрабатывает runner
         except Exception as e:
             logging.warning(f"⚠️ Ошибка чтения домашних войск: {e}")
         return result
@@ -1022,19 +1082,28 @@ class FarmManager:
         troop_indices = [int(x) for x in _raw_indices if x]
         if not troop_indices:
             troop_indices = [int(self.settings.get("troop_type_index", 1))]
-        # legacy-совместимость: troop_type = первый выбранный юнит
-        troop_type = troop_indices[0]
 
         # Шаг 1: скан если нужно.
         # FIX: скан разрешён ТОЛЬКО когда фарм включён в GUI.
         # Раньше эвазия (force_send=True) при пустом списке запускала скан,
         # игнорируя выключенный тумблер farm_enabled.
         has_list = self.load_saved_oases()
+        # FIX: load_saved_oases читает только unoccupied_oases, а геройские
+        # режимы фармят occupied_oases. Если вся округа занята животными,
+        # has_list навсегда False — и полный скан радиуса (сотни запросов)
+        # запускался перед КАЖДЫМ геройским циклом.
+        if not has_list and (hero_only or hero_with_troops) and self.load_occupied_oases():
+            has_list = True
         if (not has_list or force_rescan) and farm_on:
-            logging.info("📡 Запускаю скан оазисов...")
-            center_x, center_y = self.get_current_village_coords()
-            self.scan_oases_around(center_x, center_y)
-            self.load_saved_oases()
+            # ...и второй предохранитель: не гоняем полный скан чаще,
+            # чем раз в rescan_interval_hours (0 = без ограничения).
+            if force_rescan or self._scan_is_stale():
+                logging.info("📡 Запускаю скан оазисов...")
+                center_x, center_y = self.get_current_village_coords()
+                self.scan_oases_around(center_x, center_y)
+                self.load_saved_oases()
+            else:
+                logging.info("⏭️ Скан пропущен: предыдущий был недавно (rescan_interval_hours).")
         elif not has_list:
             logging.info("⏭️ Списка целей нет, а фарм выключен — скан пропущен.")
             return False
@@ -1148,17 +1217,21 @@ class FarmManager:
                     time.sleep(random.uniform(2.5, 4.5))
         except KeyboardInterrupt:
             logging.info("🛑 Фарм прерван.")
-
-        # Сохраняем накопленную статистику один раз за цикл.
-        if sent:
-            self.farm_stats.save()
-
-        if occupied_now:
-            self.farm_list = [
-                o for o in self.farm_list if (o['x'], o['y']) not in occupied_now
-            ]
-            self._save_to_json(self._file("unoccupied_oases"), self.current_village_id, self.farm_list)
-            logging.info(f"🚩 Удалено занятых целей из списка: {len(occupied_now)}")
+            # FIX: раньше Ctrl+C здесь молча съедался, и планировщик считал
+            # цикл успешным — бот не мог завершиться по запросу пользователя.
+            raise
+        finally:
+            # FIX: статистика и чистка списка выполняются в любом случае —
+            # при обрыве круга (исключение/Ctrl+C) они терялись целиком.
+            if sent:
+                self.farm_stats.save()
+            if occupied_now:
+                self.farm_list = [
+                    o for o in self.farm_list if (o['x'], o['y']) not in occupied_now
+                ]
+                self._save_to_json(self._file("unoccupied_oases"),
+                                   self.current_village_id, self.farm_list)
+                logging.info(f"🚩 Удалено занятых целей из списка: {len(occupied_now)}")
 
         msg = f"🏁 Фарм завершён. Отправлено набегов: {sent}"
         if skipped_animals:
@@ -1176,28 +1249,19 @@ class FarmManager:
 
     def save_settings(self, new_settings: dict):
         """
-        Обновляет self.settings и сохраняет на диск в farm_settings.json.
+        Обновляет self.settings и сохраняет их в настройки аккаунта (секция farm).
         Вызывается из menu_manager (пункт 7 меню).
+
+        FIX: раньше писалось в общий на все аккаунты farm_settings.json, который
+        никто не читал (load_settings не вызывался ниоткуда) — правки из меню
+        просто терялись, а GUI показывал старые значения.
         """
         self.settings.update(new_settings)
+        if not self.settings_store:
+            logging.warning("⚠️ Настройки фарма не сохранены: SettingsStore недоступен.")
+            return
         try:
-            with open('farm_settings.json', 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, ensure_ascii=False, indent=4)
-            logging.info(f"✅ Настройки фарма сохранены: {self.settings}")
+            self.settings_store.save({'farm': dict(new_settings)})
+            logging.info(f"✅ Настройки фарма сохранены: {new_settings}")
         except Exception as e:
             logging.error(f"❌ Ошибка сохранения настроек: {e}")
-
-    def load_settings(self):
-        """
-        Загружает настройки из farm_settings.json (если файл есть).
-        Вызывать при инициализации бота.
-        """
-        try:
-            with open('farm_settings.json', 'r', encoding='utf-8') as f:
-                saved = json.load(f)
-            self.settings.update(saved)
-            logging.info(f"📥 Настройки фарма загружены: {self.settings}")
-        except FileNotFoundError:
-            logging.debug("suppressed error in actions/oasis_action:1115", exc_info=True)
-        except Exception as e:
-            logging.warning(f"⚠️ Не удалось загрузить настройки: {e}")

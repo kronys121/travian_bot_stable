@@ -1,11 +1,11 @@
 import re
 import json
 import time
-import random
 import logging
-from pathlib import Path
 from urllib.parse import urljoin
 from utils.base_action import BaseAction
+from utils.exceptions import CaptchaDetectedError
+from utils.jsonio import read_json, write_json
 from utils.locators import BUILD, DIALOG, HERO_INVENTORY, RES_ITEM_CLASS
 
 
@@ -32,6 +32,9 @@ class SmartBuilder(BaseAction):
         self._last_missing = None
         # Невыполненное требование постройки (строка или None)
         self._last_unmet_prereq = None
+        # Уровень слота, который вернул _get_building_action (0 = слот пустой).
+        # Нужен, чтобы в историю писать РЕАЛЬНО заказанный уровень, а не цель плана.
+        self._last_slot_level = 0
         # Строить через рекламу (section2, -25% времени). Управляется из настроек.
         self.use_ad_boost = True
         # Файл прогресса стройки: {village_key: step}
@@ -43,75 +46,91 @@ class SmartBuilder(BaseAction):
     # --- ПРОГРЕСС (переживает перезапуск) --------------------------
 
     def _load_progress(self) -> dict:
+        data = read_json(self._progress_path, {})
+        return data if isinstance(data, dict) else {}
+
+    def get_saved_progress(self, village_key: str) -> tuple[int, int | None]:
+        """(шаг, длина плана на момент сохранения).
+
+        Длина нужна, чтобы отличить «план пройден до конца» от «план поменяли».
+        Записи старого формата — просто число, длина у них None.
+        """
+        raw = self._load_progress().get(str(village_key), 1)
+        if isinstance(raw, dict):
+            try:
+                plan_len = raw.get("len")
+                return int(raw.get("step", 1)), (int(plan_len) if plan_len is not None else None)
+            except (TypeError, ValueError):
+                return 1, None
         try:
-            if self._progress_path.exists():
-                return json.loads(self._progress_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            logging.debug(f"build progress load error: {e}")
-        return {}
+            return int(raw), None
+        except (TypeError, ValueError):
+            return 1, None
 
     def get_saved_step(self, village_key: str) -> int:
         """С какого шага плана продолжать для этой деревни (1 = с начала)."""
-        return int(self._load_progress().get(str(village_key), 1))
+        return self.get_saved_progress(village_key)[0]
 
-    def save_step(self, village_key: str, step: int):
-        """Запоминает шаг, на котором остановилась стройка деревни."""
-        try:
-            data = self._load_progress()
-            data[str(village_key)] = int(step)
-            tmp = self._progress_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(self._progress_path)
-        except Exception as e:
-            logging.debug(f"build progress save error: {e}")
+    def save_step(self, village_key: str, step: int, plan_len: int = None) -> bool:
+        """
+        Запоминает шаг, на котором остановилась стройка деревни.
+        Возвращает True при успешной записи: раньше ошибка глушилась в DEBUG,
+        и потерянный прогресс было невозможно заметить в логе.
+        """
+        data = self._load_progress()
+        data[str(village_key)] = ({"step": int(step), "len": int(plan_len)}
+                                  if plan_len is not None else int(step))
+        ok = write_json(self._progress_path, data)
+        if not ok:
+            logging.warning(f"⚠️ Не удалось сохранить прогресс стройки деревни {village_key}.")
+        return ok
 
-    def reset_progress(self, village_key: str = None):
+    def reset_progress(self, village_key: str = None) -> bool:
         """
         Сбрасывает прогресс стройки на шаг 1.
         Если village_key указан — сбрасывает только эту деревню.
         Если None — сбрасывает прогресс по ВСЕМ деревням (весь файл удаляется).
+        Возвращает True, если сброс действительно записан на диск.
         """
-        try:
-            if village_key is None:
+        if village_key is None:
+            try:
                 if self._progress_path.exists():
                     self._progress_path.unlink()
-                    logging.info("Прогресс стройки сброшен для всех деревень.")
-            else:
-                data = self._load_progress()
-                data.pop(str(village_key), None)
-                tmp = self._progress_path.with_suffix(".tmp")
-                tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-                tmp.replace(self._progress_path)
-                logging.info(f"Прогресс стройки сброшен для деревни {village_key}.")
-        except Exception as e:
-            logging.debug(f"reset_progress error: {e}")
+                logging.info("Прогресс стройки сброшен для всех деревень.")
+                return True
+            except OSError as e:
+                logging.warning(f"⚠️ Не удалось сбросить прогресс стройки: {e}")
+                return False
 
-    def log_history(self, village_key: str, building: str, level=None):
+        data = self._load_progress()
+        data.pop(str(village_key), None)
+        ok = write_json(self._progress_path, data)
+        if ok:
+            logging.info(f"Прогресс стройки сброшен для деревни {village_key}.")
+        else:
+            logging.warning(f"⚠️ Не удалось сбросить прогресс стройки деревни {village_key}.")
+        return ok
+
+    def log_history(self, village_key: str, building: str, level=None) -> bool:
         """
         Пишет запись в build_history_<acc>.json — лог завершённых заказов
         стройки с временем. Хранит последние 200 записей.
         """
-        try:
-            from datetime import datetime
-            hist_path = self._history_path
+        from datetime import datetime
+        history = read_json(self._history_path, [])
+        if not isinstance(history, list):
             history = []
-            if hist_path.exists():
-                try:
-                    history = json.loads(hist_path.read_text(encoding="utf-8"))
-                except Exception:
-                    history = []
-            history.append({
-                "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "village": str(village_key),
-                "building": str(building),
-                "level": level,
-            })
-            history = history[-200:]  # не растим файл бесконечно
-            tmp = hist_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(history, ensure_ascii=False, indent=1), encoding="utf-8")
-            tmp.replace(hist_path)
-        except Exception as e:
-            logging.debug(f"build history save error: {e}")
+        history.append({
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "village": str(village_key),
+            "building": str(building),
+            "level": level,
+        })
+        history = history[-200:]  # не растим файл бесконечно
+        ok = write_json(self._history_path, history, indent=1)
+        if not ok:
+            logging.warning("⚠️ Не удалось записать историю стройки.")
+        return ok
 
     def _has_premium(self) -> bool:
         """
@@ -214,6 +233,8 @@ class SmartBuilder(BaseAction):
             if cleaned in ('', '-'):
                 return 10 ** 9
             return int(cleaned)
+        except CaptchaDetectedError:
+            raise  # капчу нельзя глушить — её ловит runner и останавливает бота
         except Exception as e:
             logging.debug(f"free crop read error: {e}")
             return 10 ** 9
@@ -413,8 +434,10 @@ class SmartBuilder(BaseAction):
                     const clean = (s) => parseInt((s || '').replace(/[^\d]/g, ''), 10) || 0;
                     const order = ['lumber', 'clay', 'iron', 'crop'];
                     const result = {};
-                    // Стоимость: первые 4 .value в блоке ресурсов контракта
-                    const scopes = ['#contract', '.upgradeBuilding', '.buildingWrapper', 'body'];
+                    // Стоимость: первые 4 .value в блоке ресурсов контракта.
+                    // 'body' убран из списка: он подхватывал первые попавшиеся
+                    // .value страницы (склад/производство) и выдавал их за цену.
+                    const scopes = ['#contract', '.upgradeBuilding', '.buildingWrapper'];
                     for (const scope of scopes) {
                         const root = document.querySelector(scope);
                         if (!root) continue;
@@ -444,14 +467,20 @@ class SmartBuilder(BaseAction):
                         f"[res:debug]   {label}: есть {have}, стоит {need}"
                         + (f" — НЕ ХВАТАЕТ {diff}" if diff > 0 else " — хватает")
                     )
-                # Если transfer-кнопки пусты — используем стоимость из контракта
+                # Если transfer-кнопки пусты — считаем нехватку как (цена - запас).
+                # Раньше сюда клалась ПОЛНАЯ стоимость: нехватающими выглядели все
+                # 4 ресурса, точный перенос не включался и герой вываливал все ящики.
                 if not missing or not any(v > 0 for v in missing.values()):
-                    self._last_missing = dict(cost)
-                    logging.warning(f"[res:debug]   _last_missing установлен из контракта: {cost}")
+                    short = {r: max(0, cost.get(r, 0) - current.get(r, 0))
+                             for r in self._RES_ORDER}
+                    self._last_missing = short
+                    logging.warning(f"[res:debug]   _last_missing (нехватка из контракта): {short}")
                 else:
                     self._last_missing = missing
             elif missing:
                 self._last_missing = missing
+            # Если стоимость не считалась и transfer-кнопок нет — _last_missing
+            # НЕ трогаем: пустой словарь тут означал бы "не хватает всего".
         except Exception as e:
             logging.debug(f"_log_contract_resources: {e}")
 
@@ -493,7 +522,11 @@ class SmartBuilder(BaseAction):
         btn = self.page.locator(self.LOCATORS['upgrade_btn']).first
         try:
             if btn.is_visible() and btn.is_enabled() and 'disabled' not in (btn.get_attribute('class') or ''):
-                self.human_click(btn, force=True)
+                # human_click возвращает False при неудачном клике — раньше
+                # результат выбрасывался и провал логировался как успех.
+                if not self.human_click(btn, force=True):
+                    logging.warning("🌾 Клик по кнопке улучшения фермы не прошёл.")
+                    return False
                 logging.info("🌾 Ферма отправлена на улучшение — зерно вырастет.")
                 self.human_sleep(1.5, 2.5)
                 return True
@@ -503,6 +536,30 @@ class SmartBuilder(BaseAction):
         return False
 
     def _get_building_action(self, target_gid: str, target_lvl: int) -> tuple:
+        """
+        Обёртка: приводит gid стены из плана к реальному gid племени ДО общего
+        разбора слотов. Раньше стена обрабатывалась отдельной веткой в конце,
+        которая не читала уровень и не умела вернуть ("done", None) — план
+        вечно висел на шаге со стеной (палисад 3→4→…→20), а следующие шаги
+        не выполнялись никогда.
+        """
+        target_gid = str(target_gid)
+        if target_gid not in self._WALL_GIDS:
+            return self._building_action_for(target_gid, target_lvl)
+
+        real_wall_gid = self._detect_wall_gid() or target_gid
+        if real_wall_gid != target_gid:
+            logging.info(
+                f"[gba] Стена: в плане gid={target_gid}, "
+                f"реальный gid={real_wall_gid} — использую реальный."
+            )
+        result = self._building_action_for(real_wall_gid, target_lvl)
+        # execute_plan берёт реальный gid из 3-го элемента кортежа
+        if len(result) == 3:
+            return result
+        return (result[0], result[1], real_wall_gid)
+
+    def _building_action_for(self, target_gid: str, target_lvl: int) -> tuple:
         elements = self.page.locator(self.LOCATORS['fields']).all()
         empty_slot_href = None
         existing_levels = []
@@ -568,7 +625,8 @@ class SmartBuilder(BaseAction):
                 if highest_level >= target_lvl:
                     return ("done", None)
                 else:
-                    _, href = existing_levels[0]
+                    cur_lvl, href = existing_levels[0]
+                    self._last_slot_level = cur_lvl
                     return ("upgrade", href)
 
             elif is_resource_field:
@@ -582,7 +640,8 @@ class SmartBuilder(BaseAction):
                     return ("done", None)
                 # апгрейдируем поле с наименьшим уровнем (равномерный подъём)
                 below_target.sort(key=lambda x: x[0])
-                _, href = below_target[0]
+                cur_lvl, href = below_target[0]
+                self._last_slot_level = cur_lvl
                 return ("upgrade", href)
 
             else:
@@ -593,6 +652,7 @@ class SmartBuilder(BaseAction):
                 if non_maxed:
                     active_lvl, active_href = non_maxed[0]
                     if active_lvl < target_lvl:
+                        self._last_slot_level = active_lvl
                         return ("upgrade", active_href)
                     else:
                         return ("done", None)
@@ -601,31 +661,18 @@ class SmartBuilder(BaseAction):
                         return ("done", None)
 
         if target_gid == "16":
-            logging.debug(f"[gba:debug] result=(build_new, build.php?id=39) [wall]")
+            # Пункт сбора — у него собственный слот id=39
+            self._last_slot_level = 0
+            logging.debug("[gba:debug] result=(build_new, build.php?id=39) [rally point]")
             return ("build_new", "build.php?id=39")
-        elif target_gid in ["31", "32", "33", "37", "38"]:
-            # Определяем реальный gid стены по племени/DOM.
-            real_wall_gid = self._detect_wall_gid() or target_gid
-            if real_wall_gid != target_gid:
-                logging.info(
-                    f"[gba] Стена: в плане gid={target_gid}, "
-                    f"реальный gid={real_wall_gid} — использую реальный."
-                )
-            # Стена уже построена — ищем её слот в DOM
-            for elem in elements:
-                gid = elem.get_attribute("data-gid")
-                aid = elem.get_attribute("data-aid")
-                if gid == real_wall_gid and aid:
-                    href = f"build.php?id={aid}"
-                    logging.debug(f"[gba:debug] result=(upgrade, {href}) [wall existing gid={gid}]")
-                    return ("upgrade", href)
-            # Стена ещё не построена — используем пустой слот, но с правильным gid
-            if empty_slot_href:
-                logging.debug(f"[gba:debug] result=(build_new, {empty_slot_href}, real_gid={real_wall_gid}) [wall new]")
-                return ("build_new", empty_slot_href, real_wall_gid)
-            logging.debug(f"[gba:debug] result=(build_new, build.php?id=40, gid={real_wall_gid}) [wall fallback]")
-            return ("build_new", "build.php?id=40", real_wall_gid)
+        elif target_gid in self._WALL_GIDS:
+            # У стены выделенный слот id=40 (он же исключён из empty_slot_href).
+            # Раньше сначала брался ЛЮБОЙ пустой слот — стена уезжала не туда.
+            self._last_slot_level = 0
+            logging.debug(f"[gba:debug] result=(build_new, build.php?id=40, gid={target_gid}) [wall]")
+            return ("build_new", "build.php?id=40", target_gid)
         elif empty_slot_href:
+            self._last_slot_level = 0
             logging.debug(f"[gba:debug] result=(build_new, {empty_slot_href}) [empty slot]")
             return ("build_new", empty_slot_href)
 
@@ -733,9 +780,11 @@ class SmartBuilder(BaseAction):
                          if cost.get(r, 0) > current.get(r, 0)}
                 if short:
                     logging.warning(f"[cfs] Не хватает: {short} — откладываем.")
-                    self._last_missing = {r: cost.get(r, 0) for r in self._RES_ORDER}
+                    # Раньше тут сохранялась ПОЛНАЯ стоимость: нехватающими выглядели
+                    # все 4 ресурса и точный перенос из ящиков героя не включался.
+                    self._last_missing = short
                     return False
-                logging.info(f"[cfs] Ресурсов хватает — строим.")
+                logging.info("[cfs] Ресурсов хватает — строим.")
 
             # Выбираем кнопку в нужной секции
             # section1: button.textButtonV1.green.new
@@ -757,8 +806,12 @@ class SmartBuilder(BaseAction):
                 logging.warning(f"[cfs] Кнопка заблокирована. cls={btn_class!r}")
                 return False
 
-            self.human_click(btn, force=True)
-            logging.info(f"[cfs] Кнопка нажата — постройка запущена!")
+            # Результат клика больше не выбрасываем: неудачный клик раньше
+            # рапортовался как успешно запущенная постройка.
+            if not self.human_click(btn, force=True):
+                logging.warning(f"[cfs] Клик по кнопке section={section} не прошёл.")
+                return False
+            logging.info("[cfs] Кнопка нажата — постройка запущена!")
             self._last_missing = None  # сбрасываем нехватку — постройка прошла
             return True
 
@@ -769,13 +822,19 @@ class SmartBuilder(BaseAction):
     # 0=lumber, 1=clay, 2=iron, 3=crop
     _RES_ORDER = ['lumber', 'clay', 'iron', 'crop']
 
-    # Маппинг gid стены по племени
+    # Все возможные gid стены (по племенам)
+    _WALL_GIDS = ('31', '32', '33', '37', '38')
+
+    # Маппинг gid стены по племени. Ключи должны совпадать с теми, что пишет GUI
+    # (static/dashboard.html: roman/teuton/gaul/egyptian/hun/spartan) — раньше тут
+    # было 'egyptians'/'huns' и для этих племён стена не определялась вообще.
     _WALL_GID_BY_TRIBE = {
         'roman':    '32',  # City Wall
         'teuton':   '31',  # Earth Wall
         'gaul':     '33',  # Palisade
-        'egyptians':'38',  # Stone Wall
-        'huns':     '37',  # Makeshift Wall
+        'egyptian': '38',  # Stone Wall
+        'hun':      '37',  # Makeshift Wall
+        'spartan':  '33',  # Defensive Wall (тот же gid, что у палисада)
     }
 
     def _detect_wall_gid(self) -> str | None:
@@ -787,10 +846,9 @@ class SmartBuilder(BaseAction):
         """
         # Способ 1: DOM — стена уже построена
         try:
-            wall_gids = ['31', '32', '33', '37', '38']
             for elem in self.page.locator('[data-aid][data-gid]').all():
                 g = elem.get_attribute('data-gid')
-                if g in wall_gids:
+                if g in self._WALL_GIDS:
                     logging.info(f"[wall] Стена определена по DOM: gid={g}")
                     return g
         except Exception:
@@ -807,7 +865,8 @@ class SmartBuilder(BaseAction):
             else:
                 # Читаем из config если нет settings_store
                 tribe = getattr(self.config, 'tribe', '').lower()
-            gid = self._WALL_GID_BY_TRIBE.get(tribe)
+            # Терпим и форму множественного числа ('egyptians', 'huns', 'gauls')
+            gid = self._WALL_GID_BY_TRIBE.get(tribe) or self._WALL_GID_BY_TRIBE.get(tribe.rstrip('s'))
             if gid:
                 logging.info(f"[wall] Стена определена по племени '{tribe}': gid={gid}")
                 return gid
@@ -925,9 +984,13 @@ class SmartBuilder(BaseAction):
                 self.human_sleep(0.8, 1.5)
                 return self._confirm_transfer_dialog()
 
+            except CaptchaDetectedError:
+                raise
             except Exception as e:
                 logging.warning(f"Ошибка при взаимодействии с диалогом ресурсов: {e}")
             return False
+        except CaptchaDetectedError:
+            raise  # капчу нельзя глушить — её ловит runner и останавливает бота
         except Exception as e:
             logging.error(f"Ошибка инвентаря: {e}")
             return False
@@ -1059,7 +1122,10 @@ class SmartBuilder(BaseAction):
                 logging.warning("Кнопка подтверждения заблокирована.")
                 self._close_dialog()
                 return False
-            self.human_click(confirm_btn, force=True)
+            if not self.human_click(confirm_btn, force=True):
+                logging.warning("Клик по кнопке подтверждения переноса не прошёл.")
+                self._close_dialog()
+                return False
             logging.info("Ресурсы перенесены.")
             self.human_sleep(1.5, 2.5)
             return True
@@ -1299,8 +1365,8 @@ class SmartBuilder(BaseAction):
             btn = self.page.locator(self.LOCATORS['upgrade_btn']).first
             try:
                 if btn.is_visible() and btn.is_enabled() and 'disabled' not in (btn.get_attribute('class') or ''):
-                    self.human_click(btn, force=True)
-                    return True
+                    # возвращаем результат клика, а не безусловный True
+                    return self.human_click(btn, force=True)
             except Exception as e:
                 logging.debug(f"{section} upgrade click: {e}")
             return False
@@ -1360,9 +1426,16 @@ class SmartBuilder(BaseAction):
 
         # реклама не сработала — строим обычным способом (section1)
         logging.info("↩️ Реклама не сработала — строю обычным способом (section1).")
+        self.safe_goto(f"{self.config.base_url}/{location}")
+        self.human_sleep(0.8, 1.5)
+        queue_before = self.page.locator(self.LOCATORS['queue']).count()
         self.safe_goto(urljoin(self.page.url, slot_url_part))
         self.human_sleep(1.0, 2.0)
-        return self._click_section("section1", gid, action)
+        if not self._click_section("section1", gid, action):
+            return False
+        # Успех подтверждаем ростом очереди, а не фактом клика: клик мог быть
+        # перехвачен диалогом, а мы писали в историю "здание поставлено".
+        return self._construction_started(location, queue_before)
 
     def execute_plan(self, build_plan: list, start_step: int = None, village_key: str = None) -> int | None:
         """
@@ -1382,20 +1455,46 @@ class SmartBuilder(BaseAction):
         """
         # Автоподхват сохранённого шага, если не задан явно
         if start_step is None:
-            start_step = self.get_saved_step(village_key) if village_key else 1
-            if start_step > 1:
+            start_step, saved_len = (self.get_saved_progress(village_key)
+                                     if village_key else (1, None))
+            if saved_len is not None and saved_len != len(build_plan):
+                # Шаблон застройки для деревни поменяли в интерфейсе. Номер шага
+                # от старого плана указывает не туда: на укороченном плане он мог
+                # совпасть с маркером «пройден» и деревня переставала строиться.
+                logging.info(
+                    f"🔄 План застройки изменился ({saved_len} → {len(build_plan)} шагов) "
+                    f"— начинаю с первого шага."
+                )
+                start_step = 1
+            elif start_step > 1:
                 logging.info(f"💾 Продолжаю стройку с сохранённого шага {start_step}.")
 
         logging.info(f"Анализ плана постройки (начиная с шага {start_step})...")
 
-        if start_step < 1 or start_step > len(build_plan):
+        # Раньше start_step > len(build_plan) откатывался на 1, из-за чего маркер
+        # "план пройден" (len+1) стирался и весь план перечитывался каждый круг.
+        # Маркер завершения — РОВНО len+1. Всё, что больше, осталось от более
+        # длинного (старого) плана: план сменили/укоротили — начинаем сначала,
+        # иначе деревня навсегда застревала бы на «план завершён».
+        if start_step < 1 or start_step > len(build_plan) + 1:
             start_step = 1
+        elif start_step > len(build_plan):
+            logging.info("🎉 План постройки для этой деревни уже завершён.")
+            return None
 
         plan_to_execute = build_plan[start_step - 1:]
 
+        # Шаг, который в этом проходе оказался невыполнимым (нет свободных
+        # слотов). Прогресс дальше него не уезжает, иначе такой шаг был бы
+        # пропущен навсегда, а не отложен.
+        blocked_at = [None]
+
         def remember(step):
-            if village_key:
-                self.save_step(village_key, step)
+            if not village_key:
+                return
+            if blocked_at[0] is not None:
+                step = min(step, blocked_at[0])
+            self.save_step(village_key, step, plan_len=len(build_plan))
 
         try:
             for step_idx, task in enumerate(plan_to_execute, start_step):
@@ -1403,6 +1502,13 @@ class SmartBuilder(BaseAction):
                 gid = str(task.gid if hasattr(task, 'gid') else task['gid'])
                 name = task.name if hasattr(task, 'name') else task['name']
                 target_level = task.target_level if hasattr(task, 'target_level') else task['target_level']
+
+                # Сбрасываем состояние прошлого шага/деревни: builder один на все
+                # деревни, и старая нехватка ресурсов утекала в следующую деревню,
+                # заставляя переносить из ящиков героя не то и не столько.
+                self._last_missing = None
+                self._last_unmet_prereq = None
+                self._last_slot_level = 0
 
                 # Заходим в нужную локацию (поля или центр деревни)
                 self.safe_goto(f"{self.config.base_url}/{location}")
@@ -1415,6 +1521,22 @@ class SmartBuilder(BaseAction):
                     action, slot_url_part, gid = _result  # перезаписываем gid реальным
                 else:
                     action, slot_url_part = _result
+
+                if action == "full":
+                    # Раньше "full" попадал в ветку ниже по `not slot_url_part`,
+                    # логировался как "уже на уровне N" и шаг помечался пройденным.
+                    # Выходить из плана целиком тоже нельзя: один невозможный шаг
+                    # (свободных слотов нет) останавливал ВСЮ остальную стройку
+                    # деревни — поля, склад, амбар. Помечаем шаг заблокированным
+                    # (прогресс дальше него не уедет) и идём к следующему.
+                    logging.warning(
+                        f"🚫 [{step_idx}/{len(build_plan)}] {name}: нет свободных слотов "
+                        f"в деревне — шаг отложен, перехожу к следующему."
+                    )
+                    if blocked_at[0] is None:
+                        blocked_at[0] = step_idx
+                    remember(step_idx)
+                    continue
 
                 if action == "done" or not slot_url_part:
                     # Если уже построено - запоминаем прогресс и идем дальше,
@@ -1475,7 +1597,9 @@ class SmartBuilder(BaseAction):
                         if btn_state.get('lacking'):
                             # Кнопка неактивна — нехватка ресурсов.
                             _missing = self._get_transfer_needed()
-                            last_missing['value'] = _missing
+                            # было `last_missing['value'] = ...` — несуществующее имя,
+                            # NameError убивал весь путь восстановления ресурсов.
+                            self._last_missing = _missing
                             self._log_contract_resources(name, _missing)
                             return False
 
@@ -1489,25 +1613,30 @@ class SmartBuilder(BaseAction):
                         btn = self.page.locator(self.LOCATORS['upgrade_btn']).first
                         if btn.is_visible() and btn.is_enabled() and 'disabled' not in (
                                 btn.get_attribute('class') or ''):
-                            self.human_click(btn, force=True)
-                            return True
+                            # возвращаем результат клика, а не безусловный True
+                            return self.human_click(btn, force=True)
                     elif action == "build_new":
                         return self._construct_from_scratch(gid)
                     return False
+
+                # Уровень, который РЕАЛЬНО уйдёт в очередь на этом шаге.
+                # В историю раньше писалась цель плана (target_level) — запись
+                # "Склад 20" появлялась уже при заказе 4-го уровня.
+                queued_level = (self._last_slot_level + 1) if action == "upgrade" else 1
 
                 # Попытка №1
                 success = attempt_build()
 
                 if success:
-                    logging.info(f"🚀 Здание {name} успешно поставлено в очередь!")
+                    logging.info(f"🚀 Здание {name} поставлено в очередь (уровень {queued_level})!")
                     self._last_missing = None
-                    self.log_history(village_key or 'default', name, target_level)
+                    self.log_history(village_key or 'default', name, queued_level)
                     remember(step_idx)
                     self.human_sleep(1.5, 2.5)
                     # С Premium может быть ещё один свободный слот — проверяем
                     # не выходя из цикла, чтобы сразу поставить вторую постройку.
                     if self.is_queue_free():
-                        logging.info(f"[build] Второй слот свободен — продолжаю план.")
+                        logging.info("[build] Второй слот свободен — продолжаю план.")
                         continue
                     # Оба слота заняты — возвращаем время до ближайшего освобождения.
                     return self.get_queue_finish_seconds()
@@ -1559,9 +1688,12 @@ class SmartBuilder(BaseAction):
 
                         # Попытка №2
                         if attempt_build():
-                            logging.info(f"🚀 Со второй попытки {name} заказано! Иду в другую деревню.")
+                            logging.info(
+                                f"🚀 Со второй попытки {name} заказано (уровень {queued_level})! "
+                                f"Иду в другую деревню."
+                            )
                             self._last_missing = None
-                            self.log_history(village_key or 'default', name, target_level)
+                            self.log_history(village_key or 'default', name, queued_level)
                             remember(step_idx)
                             self.human_sleep(1.5, 2.5)
                             return self.get_queue_finish_seconds()
@@ -1577,3 +1709,6 @@ class SmartBuilder(BaseAction):
 
         except KeyboardInterrupt:
             logging.info("\n🛑 SmartBuilder прерван пользователем. Возврат в меню...")
+            # Пробрасываем дальше: Scheduler._run_job специально ре-райзит
+            # KeyboardInterrupt, чтобы runner корректно погасил браузер.
+            raise

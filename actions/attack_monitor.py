@@ -22,7 +22,7 @@ class AttackMonitor(BaseAction):
             logging.debug(f"has_incoming_attack error: {e}")
             return False
 
-    def parse_attacks(self) -> list[dict]:
+    def parse_attacks(self) -> list[dict] | None:
         """
         Парсит все входящие атаки.
         Возвращает:
@@ -32,11 +32,21 @@ class AttackMonitor(BaseAction):
                 'from_x':  42,
                 'from_y':  18,
             }, ...]
+        None — атака на странице есть, но НИ ОДНА строка не разобралась
+        (раньше в этом случае возвращался пустой список и вызывающий
+        считал, что всё спокойно).
         """
         attacks = []
         try:
             rows = self.page.locator('tr:has(.typ .att1)').all()
-            for row in rows:
+        except Exception as e:
+            logging.error(f'❌ Ошибка поиска строк атак: {e}')
+            rows = []
+
+        for row in rows:
+            # try/except ВНУТРИ цикла: одна кривая строка не должна
+            # обнулять уже разобранные атаки.
+            try:
                 # Количество: td.mov .a1
                 count = 1
                 a1 = row.locator('.mov .a1').first
@@ -49,7 +59,7 @@ class AttackMonitor(BaseAction):
                 arrival = '?'
                 timer = row.locator('.dur_r .timer').first
                 if timer.count() > 0:
-                    arrival = timer.text_content().strip()
+                    arrival = (timer.text_content() or '?').strip()
 
                 # Координаты
                 row_text = row.text_content() or ''
@@ -63,16 +73,26 @@ class AttackMonitor(BaseAction):
                     'from_x':  from_x,
                     'from_y':  from_y,
                 })
-        except Exception as e:
-            logging.error(f'❌ Ошибка парсинга атак: {e}')
+            except Exception as e:
+                logging.error(f'❌ Ошибка парсинга строки атаки: {e}')
+
+        if not attacks and self.has_incoming_attack():
+            return None
         return attacks
 
     def check_incoming(self) -> list[dict]:
         """Основной метод: проверяет атаки, логирует, шлёт Telegram."""
         if not self.has_incoming_attack():
+            self._notified.clear()  # угроза ушла — можно снова уведомлять
             return []
 
         attacks = self.parse_attacks()
+        if attacks is None:
+            # Иконка атаки есть, разметку не поняли: считаем угрозу реальной,
+            # чтобы эвазия всё-таки отработала.
+            logging.warning('🚨 Атака есть, но строку разобрать не удалось — считаю угрозу активной.')
+            return [{'count': 1, 'arrival': '?', 'from_x': 0, 'from_y': 0, 'unknown': True}]
+
         total   = sum(a['count'] for a in attacks)
         nearest = attacks[0]['arrival'] if attacks else '?'
 
@@ -81,6 +101,12 @@ class AttackMonitor(BaseAction):
         notifier = getattr(self.config, 'notifier', None)
         if notifier:
             for atk in attacks:
+                # Дедуп как в runner.py: без него каждый круг меню слал
+                # телеграм-сообщение про одну и ту же атаку.
+                key = f"{atk['from_x']}|{atk['from_y']}|{atk['count']}"
+                if key in self._notified:
+                    continue
+                self._notified.add(key)
                 try:
                     notifier.attack(
                         coords=(atk['from_x'], atk['from_y']),
@@ -107,29 +133,38 @@ class AttackMonitor(BaseAction):
     def __init__(self, page, config):
         super().__init__(page, config)
         self._last_evade_ts = 0.0
+        # ключи "x|y|count" уже отправленных уведомлений (антиспам)
+        self._notified: set[str] = set()
 
     def can_evade_now(self) -> bool:
         """True, если с прошлой эвакуации прошло больше EVADE_COOLDOWN_SEC."""
         return (time.time() - self._last_evade_ts) >= self.EVADE_COOLDOWN_SEC
 
-    def maybe_evade(self, farm_manager, attacks: list[dict]):
-        """Выводит войска в оазис при атаке (если evasion_enabled)."""
+    def mark_evaded(self):
+        """Отмечает успешную эвакуацию (запуск кулдауна). Публичный метод,
+        чтобы вызывающие не трогали приватное поле напрямую."""
+        self._last_evade_ts = time.time()
+
+    def maybe_evade(self, farm_manager, attacks: list[dict]) -> bool:
+        """Выводит войска в оазис при атаке (если evasion_enabled).
+        Возвращает True ТОЛЬКО если эвакуация реально отработала — по
+        этому флагу вызывающий решает, пропускать ли обычный фарм."""
         if not attacks:
-            return
+            return False
         # Живой тумблер из GUI приоритетнее статичного yaml-конфига
         store = getattr(farm_manager, 'settings_store', None)
         if store is not None:
             if not store.feature('evasion_enabled', True):
-                return
+                return False
         elif not getattr(self.config, 'evasion_enabled', False):
-            return
+            return False
 
         # Кулдаун: не эвакуируемся чаще раза в EVADE_COOLDOWN_SEC —
         # иначе при волнах атак бот бесконечно жмёт "увести войска".
         if not self.can_evade_now():
             left = int(self.EVADE_COOLDOWN_SEC - (time.time() - self._last_evade_ts))
             logging.info(f"🏃 Эвазия на кулдауне ещё ~{left}с — пропуск.")
-            return
+            return False
 
         logging.info('🏃 Эвазия: эвакуирую все войска...')
         # Настоящая эвакуация: все войска одним рейдом в ближайший оазис,
@@ -138,4 +173,6 @@ class AttackMonitor(BaseAction):
         # Обновляем кулдаун только если реально что-то отправили либо
         # войск не осталось — в обоих случаях повторять сразу бессмысленно.
         if result in ("SUCCESS", "NO_TROOPS"):
-            self._last_evade_ts = time.time()
+            self.mark_evaded()
+            return True
+        return False

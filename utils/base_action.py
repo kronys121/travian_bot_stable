@@ -202,20 +202,31 @@ class BaseAction:
         self._tea_break_counter += 1
 
         # Сброс счётчика каждый час
-        if time.time() - self._action_hour_start > 3600:
+        now = time.time()
+        if now - self._action_hour_start > 3600:
             self._action_count = 0
-            self._action_hour_start = time.time()
+            self._action_hour_start = now
 
         # Лимит действий в час (по конфигу).
-        # ВАЖНО: не спим тут долго — длинные паузы делает планировщик.
-        # Короткая пауза внутри действия не блокирует другие задачи надолго.
+        # БЫЛО: после короткой паузы 45-90с сбрасывались И счётчик, И начало
+        # часового окна — то есть «100 действий/час» превращалось в 100 действий
+        # за полторы минуты, ~500-600 действий в час. Лимит вообще не ограничивал.
+        # СТАЛО: ждём ровно до конца ТЕКУЩЕГО окна и только потом обнуляем счётчик.
+        # ВАЖНО: спать тут до конца окна (до 60 минут) нельзя — планировщик
+        # однопоточный, и такая пауза заморозила бы heartbeat, команды из GUI
+        # и, что хуже всего, эвакуацию войск при атаке. Поэтому пауза остаётся
+        # короткой, а окно НЕ сдвигается: счётчик обнулится сам наверху метода,
+        # когда пройдёт час от начала окна. Так лимит реально ограничивает.
         max_actions = getattr(self.config, 'max_actions_per_hour', 0)
         if max_actions and self._action_count >= max_actions:
-            wait = random.uniform(45, 90)
-            logging.info(f"🛑 Лимит {max_actions} действий/час. Короткая пауза {int(wait)}с...")
-            time.sleep(wait)
-            self._action_count = 0
-            self._action_hour_start = time.time()
+            left = max(0, int(3600 - (now - self._action_hour_start)))
+            wait = min(random.uniform(45, 90), left) if left else 0
+            if wait > 0:
+                logging.info(
+                    f"🛑 Лимит {max_actions} действий/час исчерпан "
+                    f"(до конца окна {left//60}м {left%60}с). Пауза {int(wait)}с..."
+                )
+                time.sleep(wait)
 
         # Случайный «перерыв на чай» раз в 30-60 действий.
         # FIX: раньше спали 5–20 минут ПРЯМО ВНУТРИ задачи — это блокировало
@@ -245,6 +256,13 @@ class BaseAction:
                 notifier = getattr(self.config, 'notifier', None)
                 if notifier:
                     acc = getattr(self.config, 'name', 'bot')
-                    notifier.send(f"[{acc}] 💤 Обнаружена CAPTCHA! Требуется ручной вход.")
+                    # Уведомление не должно решать судьбу проверки: раньше
+                    # падение нотифаера (сеть/токен) вылетало наружу вместо
+                    # честного True, и вызывающий код не узнавал про капчу.
+                    try:
+                        notifier.send(f"[{acc}] 💤 Обнаружена CAPTCHA! Требуется ручной вход.")
+                    except Exception:
+                        logging.debug("suppressed error in utils/base_action:check_captcha",
+                                      exc_info=True)
                 return True
         return False

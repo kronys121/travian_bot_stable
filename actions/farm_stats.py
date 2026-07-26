@@ -13,11 +13,10 @@
 добавляется отдельно (Фаза 2). Поля loot/lost уже заведены в структуре,
 чтобы профит по типам войск считался, как только появится чтение отчётов.
 """
-import json
 import logging
-import os
 from datetime import datetime
 
+from utils.jsonio import file_lock, read_json, write_json
 from utils.paths import account_file
 
 
@@ -55,17 +54,15 @@ class FarmStats:
         }
 
     def _load(self) -> dict:
-        try:
-            if self.path.exists():
-                d = json.loads(self.path.read_text(encoding="utf-8"))
-                if isinstance(d, dict):
-                    base = self._default()
-                    # мягкая миграция: дополняем недостающие ключи
-                    for k, v in base.items():
-                        d.setdefault(k, v)
-                    return d
-        except Exception:
-            logging.debug("farm_stats load error", exc_info=True)
+        # read_json сам откладывает битый файл в .corrupt-* и пишет ERROR —
+        # раньше поломка молча превращалась в чистую статистику.
+        d = read_json(self.path, default=None)
+        if isinstance(d, dict):
+            base = self._default()
+            # мягкая миграция: дополняем недостающие ключи
+            for k, v in base.items():
+                d.setdefault(k, v)
+            return d
         return self._default()
 
     def record_raid(self, target_x, target_y, troop_index: int,
@@ -147,11 +144,7 @@ class FarmStats:
             pass
 
     def save(self):
-        """Атомарная запись на диск (tmp + replace)."""
-        try:
-            tmp = str(self.path) + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, str(self.path))
-        except Exception as e:
-            logging.warning(f"⚠️ Не удалось сохранить farm_stats: {e}")
+        """Атомарная запись на диск (utils.jsonio: уникальный tmp + replace)."""
+        with file_lock(self.path):
+            if not write_json(self.path, self.data, indent=2):
+                logging.warning("⚠️ Не удалось сохранить farm_stats.")

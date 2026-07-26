@@ -2,6 +2,8 @@ import json
 import logging
 from pathlib import Path
 
+from utils.jsonio import write_json
+
 
 class CookieManager:
     def __init__(self, context, filename="cookies.json"):
@@ -11,10 +13,11 @@ class CookieManager:
     def save_cookie(self):
         try:
             cookies = self.context.cookies()
-            self.filepath.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(self.filepath, "w", encoding="utf-8") as f:
-                json.dump(cookies, f)
+            # FIX: раньше писали open(..., "w") прямо в целевой файл. Если
+            # процесс умирал посреди json.dump, куки оставались обрезанными и
+            # следующий старт логинился заново (а лог уже рапортовал успех —
+            # он стоял ВНУТРИ with, до закрытия файла).
+            if write_json(self.filepath, cookies):
                 logging.info(f"🍪 Сохранены куки: {len(cookies)} шт. в {self.filepath.name}")
         except Exception as e:
             logging.error(f"❌ Ошибка при сохранении куки: {e}")

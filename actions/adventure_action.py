@@ -2,6 +2,7 @@ import re
 import time
 import logging
 from utils.base_action import BaseAction
+from utils.exceptions import CaptchaDetectedError
 
 
 class HeroAdventure(BaseAction):
@@ -281,6 +282,10 @@ class HeroAdventure(BaseAction):
                 logging.warning(f"Здоровье ({health}%) ниже порога ({min_health}%). Идти опасно!")
                 return False
             return True
+        except CaptchaDetectedError:
+            # Капчу перехватывает runner и останавливает бота — здесь её
+            # глотать нельзя, иначе безопасное на вид False уводит бота дальше.
+            raise
         except Exception as e:
             logging.error(f"Ошибка при проверке здоровья: {e}")
             return False
@@ -298,6 +303,8 @@ class HeroAdventure(BaseAction):
             btn = rows.nth(0).locator('.textButtonV2').first
             cls = btn.get_attribute('class') or ''
             return 'disabled' in cls.split()
+        except CaptchaDetectedError:
+            raise
         except Exception:
             return False
 
@@ -440,6 +447,8 @@ class HeroAdventure(BaseAction):
                 self.safe_goto(f"{self.config.base_url}/dorf1.php")
                 return True
 
+        except CaptchaDetectedError:
+            raise
         except Exception as e:
             logging.error(f"Ошибка при отправке в приключение: {e}")
 

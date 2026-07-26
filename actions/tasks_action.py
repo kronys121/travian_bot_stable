@@ -16,6 +16,9 @@ class TasksAction(BaseAction):
                              'button.collect.collectable',
     }
 
+    # Верхняя граница проходов по кнопкам наград (страховка от бесконечного цикла)
+    MAX_REWARD_ROUNDS = 20
+
     def __init__(self, page, config):
         super().__init__(page, config)
 
@@ -55,7 +58,10 @@ class TasksAction(BaseAction):
         self.human_sleep(1.0, 2.0)
 
         collected = 0
-        while True:
+        # Цикл ОГРАНИЧЕН: human_click вернул True — это ещё не значит, что DOM
+        # изменился, и при «залипшей» кнопке бот крутился здесь бесконечно.
+        for _ in range(self.MAX_REWARD_ROUNDS):
+            before = collected
             # Шаг 1: кнопка collectRewards — открывает список наград
             rewards_btn = self.page.locator(self.LOCATORS['daily_collect_rewards_btn']).first
             try:
@@ -80,6 +86,10 @@ class TasksAction(BaseAction):
             except Exception:
                 break
 
+            if collected == before:
+                # ничего не прибавилось за проход — дальше смысла нет
+                break
+
         if collected == 0:
             logging.info("Кнопка получения ежедневной награды не найдена.")
         else:
@@ -101,7 +111,9 @@ class TasksAction(BaseAction):
 
         collected_count = 0
 
-        while True:
+        # Тот же ограниченный цикл, что и в ежедневных квестах: успешный клик
+        # не доказывает, что награда исчезла из DOM.
+        for _ in range(self.MAX_REWARD_ROUNDS):
             buttons = self.page.locator(self.LOCATORS['collect_btn']).all()
 
             if not buttons:
@@ -122,6 +134,8 @@ class TasksAction(BaseAction):
 
             if not clicked_in_this_round:
                 break
+        else:
+            logging.warning(f"⚠️ Достигнут лимит {self.MAX_REWARD_ROUNDS} проходов сбора наград — выхожу.")
 
         if collected_count == 0:
             logging.info("🤷‍♂️ Нет открытых заданий для сбора.")

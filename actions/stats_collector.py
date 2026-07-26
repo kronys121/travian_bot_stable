@@ -8,10 +8,11 @@
 Атаки сюда НЕ парсим повторно: их уже отслеживает поток attack_monitor
 в runner.py, он и передаёт список через set_attacks().
 """
-import json
 import logging
 import threading
 from datetime import datetime
+
+from utils.jsonio import file_lock, read_json, write_json
 
 
 class StatsCollector:
@@ -65,6 +66,10 @@ class StatsCollector:
         first = village_stats[0] if village_stats else {}
         stats = {
             "villages": village_stats,
+            # сколько деревень ждали и сколько реально собрали: неполный
+            # заход не должен попадать в историю как обвал ресурсов в ноль
+            "villages_expected": len(villages),
+            "villages_ok": len(village_stats),
             # legacy-поля (совместимость со старым GUI) = первая деревня
             "resources": first.get("resources", {}),
             "troops": first.get("troops", []),
@@ -76,10 +81,13 @@ class StatsCollector:
         }
         # Сохраняем прогресс кузницы, записанный SmithyUpgrader — collect()
         # пересобирает stats с нуля и иначе затёр бы этот ключ.
-        prev_smithy = self._load_existing().get("smithy")
-        if prev_smithy is not None:
-            stats["smithy"] = prev_smithy
-        self._save(stats)
+        # read-modify-write целиком под блокировкой пути: тот же файл пишет
+        # поток монитора атак и SmithyUpgrader.
+        with file_lock(self._stats_path()):
+            prev_smithy = self._load_existing().get("smithy")
+            if prev_smithy is not None:
+                stats["smithy"] = prev_smithy
+            self._save(stats)
         self._record_history(stats)
         logging.info(
             "📊 Статистика собрана: "
@@ -107,7 +115,13 @@ class StatsCollector:
                             const a = node.querySelector('a[href*="newdid"]');
                             if (a) { const m = a.href.match(/newdid=(\d+)/); if (m) id = m[1]; }
                         }
-                        const nameEl = node.querySelector('.name, a .name, a');
+                        // querySelector со списком селекторов возвращает первый
+                        // элемент в порядке ДЕРЕВА, а не по приоритету списка —
+                        // из-за этого всегда побеждал <a> (вместе с координатами
+                        // и счётчиками), а не .name. Проверяем по очереди.
+                        const nameEl = node.querySelector('.name')
+                                    || node.querySelector('a .name')
+                                    || node.querySelector('a');
                         const name = nameEl ? nameEl.textContent.trim().slice(0, 40) : '';
                         out.push({ id, name, active: node.classList.contains('active') });
                     });
@@ -515,22 +529,15 @@ class StatsCollector:
 
     def _load_existing(self) -> dict:
         """Читает текущий stats-файл аккаунта (или {} если нет/битый)."""
-        try:
-            with open(self._stats_path(), "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        data = read_json(self._stats_path(), default={})
+        return data if isinstance(data, dict) else {}
 
     def _save(self, stats: dict):
-        path = str(self._stats_path())
-        tmp = path + ".tmp"
-        try:
-            import os
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(stats, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, path)
-        except Exception as e:
-            logging.warning(f"⚠️ Не удалось записать {path}: {e}")
+        """Атомарная запись stats.json (utils.jsonio даёт уникальный tmp
+        на процесс+поток). Раньше здесь был общий '<path>.tmp', а писали в
+        него ДВА потока — главный и монитор атак: os.replace публиковал
+        перемешанный JSON."""
+        write_json(self._stats_path(), stats, indent=2)
 
     _HISTORY_CAP = 2000  # ~7 дней при сборе раз в 5 минут
 
@@ -541,8 +548,17 @@ class StatsCollector:
         ресурсы/производство по всем деревням, число войск, HP героя, золото.
         Добыча по дням уже копится в farm_stats, её не дублируем.
         """
+        expected = int(stats.get("villages_expected") or 0)
+        ok = int(stats.get("villages_ok") or 0)
+        if expected and ok < expected:
+            # Неполный заход: суммы по деревням заведомо занижены. Точку не
+            # пишем совсем — на графике будет разрыв, а не обвал ресурсов в
+            # ноль, который выглядел как настоящая потеря.
+            logging.info(
+                f"📈 История: пропуск точки, собрано деревень {ok}/{expected}."
+            )
+            return
         try:
-            import os
             from utils.paths import account_file
             name = getattr(self.config, 'name', 'bot')
 
@@ -568,24 +584,19 @@ class StatsCollector:
                 "hero_hp": hero.get("health"),
                 "gold": acc.get("gold"),
                 "silver": acc.get("silver"),
+                "villages_ok": ok,
+                "villages_expected": expected,
             }
 
-            path = str(account_file(name, 'history'))
-            data = []
-            try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-                    if not isinstance(data, list):
-                        data = []
-            except Exception:
-                data = []
-            data.append(point)
-            if len(data) > self._HISTORY_CAP:
-                data = data[-self._HISTORY_CAP:]
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-            os.replace(tmp, path)
+            path = account_file(name, 'history')
+            with file_lock(path):
+                data = read_json(path, default=[])
+                if not isinstance(data, list):
+                    data = []
+                data.append(point)
+                if len(data) > self._HISTORY_CAP:
+                    data = data[-self._HISTORY_CAP:]
+                write_json(path, data)
         except Exception as e:
             logging.debug(f"history record error: {e}")
 
@@ -593,12 +604,16 @@ class StatsCollector:
         """
         Обновляет ТОЛЬКО список атак в существующем stats-файле.
         Вызывается из потока монитора — БЕЗ обращения к странице.
+        Весь read-modify-write под блокировкой пути: иначе одновременная
+        запись из главного потока затирала свежесобранную статистику.
         """
-        try:
-            with open(self._stats_path(), "r", encoding="utf-8") as f:
-                stats = json.load(f)
-        except Exception:
-            stats = {"villages": [], "resources": {}, "troops": [], "hero": {}}
-        stats["attacks"] = self.get_attacks()
-        stats["updated_at"] = datetime.now().isoformat()
-        self._save(stats)
+        path = self._stats_path()
+        with file_lock(path):
+            stats = read_json(path, default=None)
+            if not isinstance(stats, dict):
+                # Битый/отсутствующий файл: не сбрасываем в пустой скелет
+                # молча — read_json уже отложил битый файл и записал ERROR.
+                stats = {"villages": [], "resources": {}, "troops": [], "hero": {}}
+            stats["attacks"] = self.get_attacks()
+            stats["updated_at"] = datetime.now().isoformat()
+            self._save(stats)

@@ -80,11 +80,11 @@ class TestBuildTemplates(unittest.TestCase):
         self.assertEqual(plan, fb)
 
 
-try:
-    import yaml  # noqa: F401
-    _HAS_YAML = True
-except ImportError:
-    _HAS_YAML = False
+import importlib.util
+
+# find_spec, а не `import yaml` — иначе получается неиспользуемый импорт,
+# на который справедливо ругается линтер в CI.
+_HAS_YAML = importlib.util.find_spec("yaml") is not None
 
 
 @unittest.skipUnless(_HAS_YAML, "pyyaml не установлен")

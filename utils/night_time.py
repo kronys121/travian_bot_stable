@@ -13,7 +13,12 @@ def is_night(sleep_hours, now: datetime | None = None) -> bool:
         return False
     now = now or datetime.now()
     hour = now.hour
-    start, end = int(sleep_hours[0]), int(sleep_hours[1])
+    start, end = int(sleep_hours[0]) % 24, int(sleep_hours[1]) % 24
+    if start == end:
+        # Пустое окно, а не круглосуточная ночь. Раньше такой конфиг
+        # проваливался в ветку «через полночь» и давала True всегда —
+        # бот засыпал навсегда.
+        return False
     if start < end:
         return start <= hour < end
     return hour >= start or hour < end  # переход через полночь

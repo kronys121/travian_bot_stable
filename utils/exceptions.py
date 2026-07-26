@@ -7,22 +7,6 @@ class CaptchaDetectedError(TravianBotError):
     """Обнаружена CAPTCHA. Бот должен остановиться и уведомить."""
     pass
 
-
-class NoBuildingsError(TravianBotError):
-    """Не найдено здание для постройки. Вернуться в цикл."""
-    pass
-
-
-class NoTroopsError(TravianBotError):
-    """Войска закончились. Остановить фарм для этой деревни."""
-    pass
-
-
-class LoginError(TravianBotError):
-    """Ошибка авторизации."""
-    pass
-
-
-class ServerUnavailableError(TravianBotError):
-    """Сервер недоступен. Повторить позже."""
-    pass
+# NoBuildingsError / NoTroopsError / LoginError / ServerUnavailableError удалены:
+# их никто не бросал и не ловил — код обходился обычными Exception и кодами
+# возврата, а «объявленные» исключения только создавали иллюзию контракта.

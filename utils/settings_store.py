@@ -1,9 +1,10 @@
 import json
 import logging
-import os
 import threading
-import time
-from pathlib import Path
+
+from utils.jsonio import quarantine, write_json
+from utils.merge import deep_merge as _deep_merge
+from utils.paths import account_file
 
 DEFAULT_SETTINGS = {
     "features": {
@@ -50,6 +51,9 @@ DEFAULT_SETTINGS = {
         "max_animal_defense": 0,
         # Не отправлять героя в фарм/приключение, если HP ниже этого порога (%).
         "hero_min_health": 30,
+        # Запас силы героя над защитой оазиса (%). 150 = идём только если
+        # герой в 1.5 раза сильнее животных.
+        "hero_safety_pct": 150,
     },
     "training": {
         # Одиночный формат (фолбэк, если queue пуст)
@@ -65,6 +69,11 @@ DEFAULT_SETTINGS = {
         # Очереди по деревням: {"Столица": [...queue...], "Деревня 2": [...]}
         # Если деревня не найдена — используется глобальная queue выше.
         "village_queues": {},
+        # Доля свободных ресурсов, которую разрешено потратить на один заказ
+        # войск (%). Читается troop_trainer.get_max_affordable.
+        "spend_pct": 100,
+        # Жёсткий потолок размера одного заказа (0 = без ограничения).
+        "max_batch": 0,
     },
     "smithy": {
         # Очередь улучшений кузницы (сортируется по priority перед выполнением).
@@ -114,20 +123,15 @@ DEFAULT_SETTINGS = {
 }
 
 
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Рекурсивно накладывает override на base (не мутирует аргументы)."""
-    result = dict(base)
-    for k, v in (override or {}).items():
-        if isinstance(v, dict) and isinstance(result.get(k), dict):
-            result[k] = _deep_merge(result[k], v)
-        elif v is not None:
-            result[k] = v
-    return result
+# Сентинел: файл существует, но прочитать его не удалось. Отличать это
+# состояние от «файла нет» критично — иначе одна битая строка стирала все
+# пользовательские шаблоны застройки, очереди тренировки и правила переброски.
+_UNREADABLE = object()
 
 
 class SettingsStore:
     """
-    Единый источник настроек аккаунта: bot_settings_{name}.json.
+    Единый источник настроек аккаунта: data/<acc>/settings.json.
 
     - Бот вызывает get()/section() перед каждой задачей — файл перечитывается,
       если изменился на диске (mtime) => настройки применяются В РЕАЛЬНОМ ВРЕМЕНИ.
@@ -137,8 +141,8 @@ class SettingsStore:
 
     def __init__(self, account_name: str, yaml_account_config: dict = None):
         self.account_name = account_name
-        self.path = Path(f"bot_settings_{account_name}.json")
-        self._lock = threading.Lock()
+        self.path = account_file(account_name, 'settings')
+        self._lock = threading.RLock()
         self._mtime = 0.0
         self._data = {}
         self._init_from_yaml(yaml_account_config or {})
@@ -174,7 +178,17 @@ class SettingsStore:
 
         with self._lock:
             existing = self._read_file()
-            if existing is None:
+            if existing is _UNREADABLE:
+                # Файл есть, но он битый. НЕ перетираем его дефолтами вслепую:
+                # сначала уводим в карантин, чтобы содержимое можно было спасти.
+                dst = quarantine(self.path)
+                logging.error(
+                    f"❌ SettingsStore: {self.path.name} повреждён и сохранён как "
+                    f"{dst.name if dst else '<не удалось>'}. Создаю новый из дефолтов."
+                )
+                self._data = defaults
+                self._write_file(self._data)
+            elif existing is None:
                 self._data = defaults
                 self._write_file(self._data)
             else:
@@ -188,20 +202,24 @@ class SettingsStore:
     # ---------- файл ----------
 
     def _read_file(self):
+        """None — файла нет/он пуст; _UNREADABLE — файл есть, но битый; иначе dict."""
         try:
-            if self.path.exists() and self.path.stat().st_size > 0:
-                return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception as e:
+            if not self.path.exists() or self.path.stat().st_size == 0:
+                return None
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logging.error(f"❌ SettingsStore: {self.path.name} не разбирается как JSON: {e}")
+            return _UNREADABLE
+        except OSError as e:
             logging.warning(f"⚠️ SettingsStore: не удалось прочитать {self.path.name}: {e}")
-        return None
+            return _UNREADABLE
+        if not isinstance(data, dict):
+            logging.error(f"❌ SettingsStore: {self.path.name} содержит не объект JSON.")
+            return _UNREADABLE
+        return data
 
     def _write_file(self, data: dict):
-        tmp = self.path.with_suffix(".tmp")
-        try:
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(tmp, self.path)
-        except Exception as e:
-            logging.error(f"❌ SettingsStore: ошибка записи {self.path.name}: {e}")
+        write_json(self.path, data, indent=2)
 
     # ---------- API ----------
 
@@ -217,10 +235,13 @@ class SettingsStore:
             return
         with self._lock:
             fresh = self._read_file()
-            if fresh is not None:
+            if fresh is not None and fresh is not _UNREADABLE:
                 self._data = _deep_merge(DEFAULT_SETTINGS, fresh)
                 self._mtime = mtime
                 logging.info("🔄 Настройки перезагружены (изменены в GUI).")
+            else:
+                # Не даём себе перечитывать битый файл каждые несколько секунд.
+                self._mtime = mtime
 
     def section(self, name: str) -> dict:
         """Актуальная секция настроек ('features', 'farm', 'training', 'trade')."""
@@ -245,6 +266,10 @@ class SettingsStore:
         Дашборд шлёт полный объект для village_plans / custom_plans.
         """
         with self._lock:
+            # Перечитываем файл ПЕРЕД слиянием: дашборд, мини-апп и бот —
+            # разные процессы, и без этого правка из одного окна затирала
+            # правку, сделанную из другого секунду назад.
+            self.reload_if_changed()
             merged = _deep_merge(self._data, updates)
             for sec, key in replace_paths:
                 s = updates.get(sec)
@@ -252,4 +277,9 @@ class SettingsStore:
                     merged.setdefault(sec, {})[key] = s[key]
             self._data = merged
             self._write_file(self._data)
-            self._mtime = time.time()
+            try:
+                # Берём mtime реального файла, а не wall-clock: иначе следующий
+                # section() всегда считал файл изменившимся и читал его заново.
+                self._mtime = self.path.stat().st_mtime
+            except OSError:
+                self._mtime = 0.0

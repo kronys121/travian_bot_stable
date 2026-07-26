@@ -21,12 +21,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [%(levelname)s] - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
 
 def run_interactive():
     """Отладочный режим: ручное меню на первом аккаунте из config.yaml."""
@@ -104,6 +98,9 @@ def run_interactive():
             attack_monitor=attack_monitor,
             troop_trainer=troop_trainer,
             trade_manager=trade_manager,
+            # ФИКС: без settings_store интерактивный режим не видел
+            # per-village планы стройки из GUI (runner.py их передаёт).
+            settings_store=store,
         )
 
         try:
@@ -134,6 +131,15 @@ def run_interactive():
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
+    # ФИКС: basicConfig стоял на уровне модуля. При spawn multiprocessing
+    # заново выполняет main.py в дочернем процессе, root-логгер оказывался
+    # уже настроенным — и basicConfig в runner.run_bot становился no-op:
+    # per-account лог logs/<name>_<date>.log не создавался вовсе.
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - [%(levelname)s] - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     if '--interactive' in sys.argv:
         run_interactive()
     else:

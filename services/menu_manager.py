@@ -113,7 +113,15 @@ class MenuManager:
                         const a = node.querySelector('a');
                         if (a) { const m = a.href.match(/(\d{4,})/); if (m) id = m[1]; }
                     }
-                    const nameEl = node.querySelector('.name, a .name, a');
+                    // querySelector со списком селекторов возвращает первый
+                    // элемент в порядке ДЕРЕВА, а не по приоритету списка —
+                    // всегда побеждал <a> (имя вместе с координатами и
+                    // счётчиками). Из-за этого ключи name_to_id не совпадали
+                    // с именами деревень, которые показывает дашборд, и ни одно
+                    // правило переброски ресурсов не находило донора.
+                    const nameEl = node.querySelector('.name')
+                                || node.querySelector('a .name')
+                                || node.querySelector('a');
                     const name = nameEl ? nameEl.textContent.trim().slice(0, 40) : '';
                     if (name) out.push({ id, name });
                 });
@@ -228,7 +236,7 @@ class MenuManager:
                 logging.info(f"[Build] Шаблон аккаунта '{acc_template}' ({len(plan)} шагов)")
                 return plan
 
-            logging.info(f"[Build] Шаблон не назначен → глобальный план.")
+            logging.info("[Build] Шаблон не назначен → глобальный план.")
         except Exception as e:
             logging.warning(f"[Build] Ошибка чтения шаблона для {village_key}: {e}")
 
@@ -336,7 +344,7 @@ class MenuManager:
 
                                 switch_url = f"{self.config.base_url}/dorf1.php"
 
-                                logging.info(f"🔄 === АКТИВНАЯ ДЕРЕВНЯ ===")
+                                logging.info("🔄 === АКТИВНАЯ ДЕРЕВНЯ ===")
 
                             self.page.goto(switch_url)
 
@@ -349,10 +357,13 @@ class MenuManager:
                             # Эвазия при атаке.
                             # FIX: раньше maybe_evade запускал фарм, а строкой ниже
                             # auto_farm() запускался ЕЩЁ РАЗ => двойная отправка.
+                            # FIX: флаг ставился безусловно — одна висящая атака
+                            # выключала фарм по всему аккаунту на часы, даже если
+                            # эвазия не сработала (кулдаун/тумблер/нет войск).
+                            # Ориентируемся на результат maybe_evade.
                             evaded = False
                             if self.attack_monitor and attacks and getattr(self.config, 'evasion_enabled', False):
-                                self.attack_monitor.maybe_evade(self.farm_manager, attacks)
-                                evaded = True
+                                evaded = bool(self.attack_monitor.maybe_evade(self.farm_manager, attacks))
 
                             if not evaded:
                                 self.farm_manager.auto_farm()

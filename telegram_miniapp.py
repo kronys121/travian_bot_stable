@@ -202,6 +202,23 @@ MINIAPP_HTML = r"""<!DOCTYPE html>
 </div>
 
 <script>
+// Токен доступа (DASHBOARD_TOKEN в .env) приходит в адресной строке кнопки
+// WebApp: https://.../miniapp?token=... Заворачиваем fetch один раз, чтобы
+// все запросы к /api несли X-Auth-Token — иначе с включённым токеном
+// мини-апп получал 401 на каждый запрос и показывал пустой список.
+(function () {
+  const token = new URLSearchParams(location.search).get("token");
+  if (!token) return;
+  const origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = Object.assign({}, init);
+    const headers = new Headers(init.headers || {});
+    headers.set("X-Auth-Token", token);
+    init.headers = headers;
+    return origFetch.call(this, input, init);
+  };
+})();
+
 const tg = window.Telegram?.WebApp;
 if(tg){ tg.ready(); tg.expand(); }
 
@@ -414,7 +431,9 @@ function renderSettings(){
         <input type="number" id="s-rate" value="${acc?.rate||3}" min="1" max="10"></div>
       ${selField('s-headless','Браузер',[['true','Скрытый (headless)'],['false','Видимый']],String(acc?.headless!==false))}
       <div class="field"><label>Прокси</label>
-        <input type="text" id="s-proxy" value="${esc(acc?.proxy||'')}" placeholder="socks5://user:pass@host:port"></div>
+        <!-- SOCKS5 с логином/паролем тоже работает: Chromium его не умеет,
+             поэтому runner поднимает локальный HTTP->SOCKS5 туннель. -->
+        <input type="text" id="s-proxy" value="${esc(acc?.proxy||'')}" placeholder="http://user:pass@host:port"></div>
       <button class="save-btn" id="s-save" onclick="saveConnection()">Сохранить подключение</button>
       <div class="save-msg" id="s-conn-msg"></div>
 

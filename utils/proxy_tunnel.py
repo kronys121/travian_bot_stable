@@ -35,11 +35,8 @@ except ImportError:
     _PYSOCKS_OK = False
 
 
-def _free_port() -> int:
-    """Найти свободный TCP-порт на localhost."""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+class ProxyTunnelError(RuntimeError):
+    """Туннель не удалось поднять — запускать браузер без прокси нельзя."""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -62,18 +59,32 @@ class _TunnelHandler(threading.Thread):
         self.socks_pass = socks_pass
 
     def _make_socks5_socket(self, target_host: str, target_port: int) -> socket.socket:
-        """Открыть TCP-сокет до target_host:target_port через SOCKS5 с авторизацией."""
+        """Открыть TCP-сокет до target_host:target_port через SOCKS5 с авторизацией.
+
+        rdns=True (по умолчанию у socksocket) — имя резолвит сам прокси.
+        Иначе DNS-запрос ушёл бы с нашего IP и выдал реальное местоположение.
+        """
         s = socks.socksocket()
         s.set_proxy(
             socks.SOCKS5,
             self.socks_host,
             self.socks_port,
+            rdns=True,
             username=self.socks_user,
             password=self.socks_pass,
         )
         s.settimeout(30)
         s.connect((target_host, target_port))
         return s
+
+    def _fail(self, status: bytes, why: str):
+        """Ответить браузеру внятной ошибкой, а не молча закрыть сокет."""
+        logger.warning(f"[proxy_tunnel] {why}")
+        try:
+            self.client.sendall(b"HTTP/1.1 " + status + b"\r\nContent-Length: 0\r\n"
+                                b"Connection: close\r\n\r\n")
+        except OSError:
+            pass
 
     def _pipe(self, a: socket.socket, b: socket.socket):
         """Двунаправленная прокачка трафика между двумя сокетами."""
@@ -109,16 +120,26 @@ class _TunnelHandler(threading.Thread):
             except Exception:
                 logging.debug("suppressed error in utils/proxy_tunnel:110", exc_info=True)
 
+    MAX_HEADER = 64 * 1024
+
     def _handle(self):
-        # Читаем первую строку запроса
+        # Читаем запрос целиком до конца заголовков.
+        # БЫЛО: сначала ждали первую \r\n, а потом искали \r\n\r\n в ОСТАТКЕ.
+        # Для запроса без единого заголовка ("CONNECT host:port HTTP/1.1\r\n\r\n")
+        # в остатке лежит ровно "\r\n" — и цикл вечно ждал данных, которые
+        # никто уже не пришлёт. Соединение висело до таймаута.
         buf = b""
-        while b"\r\n" not in buf:
+        while b"\r\n\r\n" not in buf:
             chunk = self.client.recv(4096)
             if not chunk:
                 return
             buf += chunk
+            if len(buf) > self.MAX_HEADER:
+                self._fail(b"431 Request Header Fields Too Large", "слишком длинные заголовки")
+                return
 
-        first_line, rest = buf.split(b"\r\n", 1)
+        head, _, pending = buf.partition(b"\r\n\r\n")
+        first_line, _, rest = head.partition(b"\r\n")
         parts = first_line.split(b" ")
         if len(parts) < 2:
             return
@@ -133,16 +154,18 @@ class _TunnelHandler(threading.Thread):
             else:
                 host, port = host_port, 443
 
-            # Дочитываем заголовки до пустой строки
-            header_buf = rest
-            while b"\r\n\r\n" not in header_buf:
-                chunk = self.client.recv(4096)
-                if not chunk:
-                    return
-                header_buf += chunk
-
-            remote = self._make_socks5_socket(host, port)
+            # pending — то, что клиент прислал ВСЛЕД за заголовками (например
+            # первые байты TLS, если он не стал ждать ответа). Раньше терялось.
+            try:
+                remote = self._make_socks5_socket(host, port)
+            except Exception as e:
+                # Раньше соединение просто рвалось, и Chromium показывал
+                # непонятный ERR_EMPTY_RESPONSE вместо причины.
+                self._fail(b"502 Bad Gateway", f"SOCKS5 не дал соединение до {host}:{port}: {e}")
+                return
             self.client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            if pending:
+                remote.sendall(pending)
             self._pipe(self.client, remote)
 
         else:
@@ -152,12 +175,19 @@ class _TunnelHandler(threading.Thread):
             host = u.hostname or ""
             port = u.port or 80
 
-            remote = self._make_socks5_socket(host, port)
-            # Перестраиваем запрос без прокси-заголовков
+            try:
+                remote = self._make_socks5_socket(host, port)
+            except Exception as e:
+                self._fail(b"502 Bad Gateway", f"SOCKS5 не дал соединение до {host}:{port}: {e}")
+                return
+            # Перестраиваем запрос: в абсолютной форме (proxy-style) origin-сервер
+            # его не поймёт. rest — заголовки уже без завершающей пустой строки,
+            # поэтому терминатор дописываем сами, а следом — тело, если оно было.
             path = u.path or "/"
             if u.query:
                 path += "?" + u.query
-            rebuilt = method + b" " + path.encode() + b" HTTP/1.1\r\n" + rest
+            rebuilt = (method + b" " + path.encode() + b" HTTP/1.1\r\n"
+                       + rest + b"\r\n\r\n" + pending)
             remote.sendall(rebuilt)
             self._pipe(self.client, remote)
 
@@ -165,24 +195,29 @@ class _TunnelHandler(threading.Thread):
 class _TunnelServer(threading.Thread):
     """Слушает localhost:port, принимает соединения от Playwright."""
 
-    def __init__(self, port: int,
-                 socks_host: str, socks_port: int,
+    def __init__(self, socks_host: str, socks_port: int,
                  socks_user: str | None, socks_pass: str | None):
         super().__init__(daemon=True)
-        self.port = port
         self.socks_host = socks_host
         self.socks_port = socks_port
         self.socks_user = socks_user
         self.socks_pass = socks_pass
         self._stop_event = threading.Event()
-        self._srv: socket.socket | None = None
 
-    def run(self):
+        # Слушающий сокет открываем ЗДЕСЬ, а не в run().
+        # Было две проблемы: (1) bind() в потоке — гонка, Chromium успевал
+        # постучаться раньше, чем сокет начинал слушать, и получал
+        # ERR_PROXY_CONNECTION_FAILED; (2) исключение из run() умирало вместе
+        # с потоком, и бот стартовал «с прокси», которого на самом деле нет.
+        # Порт 0 = ядро само выдаёт свободный (без гонки за занятый порт).
         self._srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._srv.bind(("127.0.0.1", self.port))
+        self._srv.bind(("127.0.0.1", 0))
         self._srv.listen(64)
         self._srv.settimeout(1.0)
+        self.port = self._srv.getsockname()[1]
+
+    def run(self):
         while not self._stop_event.is_set():
             try:
                 client, _ = self._srv.accept()
@@ -226,41 +261,52 @@ class Socks5Tunnel:
         self._port: int | None = None
         self._original_proxy: dict | None = None   # для случая без туннеля
 
+    # socks5h — та же схема, только DNS резолвит прокси. Chromium её вообще
+    # не знает, так что для него это тем более случай «нужен туннель».
+    SOCKS_SCHEMES = ("socks5", "socks5h")
+
     @staticmethod
     def needed(proxy_str: str | None) -> bool:
-        """True если прокси — socks5 с логином/паролем (Chromium не поддерживает)."""
-        if not proxy_str:
+        """True если прокси — socks5 с логином/паролем (Chromium не поддерживает).
+
+        Разбор через split_proxy, а НЕ через urlparse. С urlparse тут было две
+        дыры, и обе выглядели одинаково — «SOCKS не работает, только HTTP»:
+          - пароль со слэшем (socks5://user:pa/ss@host:port): слэш заканчивал
+            netloc, логин терялся, needed() возвращал False, туннель не
+            поднимался, и Chromium получал socks5 с авторизацией, которую
+            не умеет;
+          - схема socks5h:// не совпадала с жёстким == "socks5".
+        """
+        from utils.accounts import split_proxy
+        p = split_proxy(proxy_str)
+        if not p:
             return False
-        raw = str(proxy_str).strip()
-        if "://" not in raw:
-            raw = "http://" + raw
-        u = urlparse(raw)
-        return u.scheme.lower() == "socks5" and bool(u.username)
+        return p["scheme"] in Socks5Tunnel.SOCKS_SCHEMES and bool(p["username"])
 
     def __enter__(self) -> "Socks5Tunnel":
-        raw = self._proxy_str
-        if "://" not in raw:
-            raw = "http://" + raw
-        u = urlparse(raw)
+        from utils.accounts import split_proxy
+        p = split_proxy(self._proxy_str)
 
-        if self.needed(self._proxy_str):
+        if p and self.needed(self._proxy_str):
             if not _PYSOCKS_OK:
-                raise RuntimeError(
-                    "PySocks не установлен. Выполни: pip install PySocks\n"
-                    "Без него SOCKS5 с паролем не работает."
+                raise ProxyTunnelError(
+                    "PySocks не установлен. Выполни: pip install PySocks — "
+                    "без него SOCKS5 с логином/паролем не работает."
                 )
-            self._port = _free_port()
-            self._server = _TunnelServer(
-                port=self._port,
-                socks_host=u.hostname,
-                socks_port=u.port or 1080,
-                socks_user=u.username,
-                socks_pass=u.password,
-            )
+            try:
+                self._server = _TunnelServer(
+                    socks_host=p["host"],
+                    socks_port=p["port"],
+                    socks_user=p["username"],
+                    socks_pass=p["password"],
+                )
+            except OSError as e:
+                raise ProxyTunnelError(f"не удалось открыть локальный порт туннеля: {e}") from e
+            self._port = self._server.port
             self._server.start()
             logger.info(
                 f"[proxy_tunnel] HTTP->SOCKS5 туннель запущен: "
-                f"127.0.0.1:{self._port} -> {u.hostname}:{u.port}"
+                f"127.0.0.1:{self._port} -> {p['host']}:{p['port']}"
             )
         else:
             # Не socks5-с-паролем — используем прокси напрямую как раньше

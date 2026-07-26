@@ -1,6 +1,7 @@
-import time
 import logging
 from services.smart_builder import SmartBuilder
+from utils.exceptions import CaptchaDetectedError
+from utils.jsonio import file_lock, read_json, write_json
 from utils.locators import SMITHY
 
 
@@ -144,6 +145,9 @@ class SmithyUpgrader(SmartBuilder):
             self.human_sleep(1.5, 2.5)
             visible = self.page.locator(self.SMITHY_LOCATORS['smithy_container']).count() > 0
             return visible
+        except CaptchaDetectedError:
+            # Капчу гасить нельзя: её ловит runner и останавливает бота.
+            raise
         except Exception as e:
             logging.warning(f"[Smithy] Не удалось открыть кузницу: {e}")
             return False
@@ -242,7 +246,6 @@ class SmithyUpgrader(SmartBuilder):
         'smithy'), не затирая остальные поля — GUI показывает его как стройку.
         Каждый элемент дополняется troop_index (1-10) для подписи в интерфейсе.
         """
-        import json, os
         items = self._get_in_progress()
         # определяем базу племени, чтобы вычислить troop_index из абсолютного ID
         tribe = self._detect_tribe_from_page() or self._get_tribe()
@@ -254,20 +257,16 @@ class SmithyUpgrader(SmartBuilder):
                 it["troop_index"] = ti if 1 <= ti <= 10 else None
         from utils.paths import account_file
         name = getattr(self.config, 'name', 'bot')
-        path = str(account_file(name, 'stats'))
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                stats = json.load(f)
-        except Exception:
-            stats = {}
-        stats["smithy"] = items
-        tmp = path + ".tmp"
-        try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(stats, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, path)
-        except Exception as e:
-            logging.debug(f"[Smithy] _save_progress: {e}")
+        path = account_file(name, 'stats')
+        # Тот же файл пишут StatsCollector (главный поток) и поток монитора
+        # атак. Раньше здесь был общий '<path>.tmp' и незащищённый
+        # read-modify-write — писатели затирали tmp друг друга.
+        with file_lock(path):
+            stats = read_json(path, default={})
+            if not isinstance(stats, dict):
+                stats = {}
+            stats["smithy"] = items
+            write_json(path, stats, indent=2)
 
     # ------------------------------------------------------------------
     # Поиск строки юнита по абсолютному ID в onclick
@@ -322,9 +321,10 @@ class SmithyUpgrader(SmartBuilder):
         Читает текущий уровень улучшения из текста блока .title.
         Формат: "Фаланга Уровень 1 (Имеется: 35)" — берём первую цифру после слова
         Уровень/Level. Если .level дочерний элемент — берём цифры из него.
-        Возвращает 0 если не улучшался, -1 если юнит не найден.
+        Возвращает 0 если не улучшался, -1 если юнит не найден ИЛИ уровень
+        прочитать не удалось (0 зарезервирован за проверенным «юнит есть,
+        текста уровня нет»).
         """
-        abs_id = self._troop_absolute_id(troop_index)
         # Находим строку-контейнер через _find_unit_row
         row = self._find_unit_row(troop_index)
         if row is None:
@@ -368,9 +368,13 @@ class SmithyUpgrader(SmartBuilder):
             # Юнит показан, но текста уровня нет — значит ещё не улучшался (0).
             logging.info(f"[Smithy] t{troop_index}: текст уровня не найден -> считаю уровень 0.")
             return 0
+        except CaptchaDetectedError:
+            raise
         except Exception as e:
+            # -1 = «не знаю» (см. docstring). Раньше отдавали 0, и run()
+            # считал юнита неулучшенным, снова и снова жмякая улучшение.
             logging.warning(f"[Smithy] get_current_level t{troop_index}: {e}")
-            return 0
+            return -1
 
     # ------------------------------------------------------------------
     # Поиск кнопок в блоках .cta
@@ -426,6 +430,7 @@ class SmithyUpgrader(SmartBuilder):
         """
         Нажимает кнопку во втором блоке .cta (улучшение с рекламой, -25% времени).
         После нажатия обрабатывает окно согласия и видеоплеер через SmartBuilder.
+        Возвращает True ТОЛЬКО если улучшение реально появилось в .under_progress.
         """
         try:
             btn = self._get_cta_button(troop_index, ad=True)
@@ -442,13 +447,28 @@ class SmithyUpgrader(SmartBuilder):
 
             # Окно согласия (checkbox + ok.green) — показывается только 1 раз
             self._handle_ad_consent()
-            # Запуск плеера (play + play_small + mute) через метод SmartBuilder
-            self._click_video_feature_btn()
+            # Запуск плеера (play + play_small + mute) через метод SmartBuilder.
+            # Селектор ad_video_btn — со страницы контрактов стройки, в кузнице
+            # его нет. Раньше результат игнорировался: бот впустую ждал 40с
+            # и возвращал True, из-за чего обычная кнопка уже не пробовалась.
+            if not self._click_video_feature_btn():
+                logging.info(f"[Smithy] t{troop_index}: плеер рекламы не запустился.")
+                return False
             # Ждём прокрутку рекламы
             self._wait_for_ad()
 
+            # Проверяем ФАКТ запуска: улучшение должно появиться в
+            # .under_progress. Страницу перечитываем — после плеера в DOM
+            # мог остаться дорекламный снимок.
+            self._open_smithy()
+            if not self._is_unit_upgrading(troop_index):
+                logging.info(f"[Smithy] t{troop_index}: после рекламы улучшение не началось.")
+                return False
+
             logging.info(f"[Smithy] t{troop_index}: реклама досмотрена, улучшение -25% запущено.")
             return True
+        except CaptchaDetectedError:
+            raise
         except Exception as e:
             logging.warning(f"[Smithy] click_upgrade_ad t{troop_index}: {e}")
             return False
@@ -485,7 +505,7 @@ class SmithyUpgrader(SmartBuilder):
 
             current = self._get_current_level(idx)
             if current < 0:
-                logging.info(f"[Smithy] t{idx}: юнит не найден в кузнице, пропуск.")
+                logging.info(f"[Smithy] t{idx}: юнит не найден или уровень не прочитан, пропуск.")
                 continue
             if current >= target:
                 logging.info(f"[Smithy] t{idx}: уровень {current}/{target} — цель достигнута.")

@@ -11,7 +11,12 @@ TOWN_HALL_GID = "24"
 # Малый праздник — первая кнопка .green внутри .celebration
 # Большой праздник — вторая (доступен позже)
 SEL_CELEBRATE_BTN   = ".celebration .green, .start .green, button.green"
-SEL_ALREADY_RUNNING = ".celebration .inProgress, .gold .inProgress, .timer"
+# Таймер ИМЕННО праздника. Раньше здесь был документ-широкий ".timer" —
+# на build.php?gid=24 очередь стройки рисует свои .timer, поэтому праздник
+# считался идущим всегда, пока в деревне что-нибудь строилось.
+SEL_ALREADY_RUNNING = (".villageCelebrations .timer, .under_progress .timer, "
+                       ".celebrationDuration .timer, .celebration .inProgress, "
+                       ".celebration .timer")
 
 
 class CelebrationAction:
@@ -127,14 +132,14 @@ class CelebrationAction:
         """
         base = self.config.base_url
         try:
-            link = self.page.evaluate(f"""
-            () => {{
+            link = self.page.evaluate("""
+            () => {
                 // Ратуша в Travian — gid=24
                 const a = document.querySelector(
                     'a[href*="gid=24"], [data-gid="24"] a, .buildingSlot[data-gid="24"] a'
                 );
                 return a ? a.href : null;
-            }}
+            }
             """)
             if link:
                 return link
@@ -160,13 +165,13 @@ class CelebrationAction:
     def _is_running(self) -> bool:
         """Проверяет есть ли активный праздник на странице Ратуши."""
         try:
-            # Таймер обратного отсчёта — знак что праздник идёт
-            timers = self.page.locator(".timer, .countDown, .inProgress").all()
-            if timers:
-                return True
-            # Кнопка старта задизейблена тоже означает что что-то идёт
+            # Основной признак — задизейбленная кнопка старта: он не зависит
+            # от того, какие ещё таймеры есть на странице.
             btn = self.page.locator(SEL_CELEBRATE_BTN).first
             if btn.count() and btn.is_disabled():
+                return True
+            # Запасной признак — таймер В БЛОКЕ ПРАЗДНИКА (не любой на странице)
+            if self.page.locator(SEL_ALREADY_RUNNING).count() > 0:
                 return True
         except Exception:
             logging.debug("suppressed error in actions/celebration_action:172", exc_info=True)

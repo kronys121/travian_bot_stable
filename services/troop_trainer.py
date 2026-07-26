@@ -1,6 +1,7 @@
 import logging
 from bs4 import BeautifulSoup
 from utils.base_action import BaseAction
+from utils.exceptions import CaptchaDetectedError
 
 
 class TroopTrainer(BaseAction):
@@ -41,66 +42,6 @@ class TroopTrainer(BaseAction):
             merged.update(self.settings_store.section("training"))
             return merged
         return self.settings
-
-    def get_current_count(self, troop_index: int) -> int:
-        """
-        Читает кол-во своих войск типа t{troop_index} из вкладки "Войска"
-        точки сбора (build.php?id=39&gid=16&tt=1).
-
-        Разметка Travian:
-          - блок домашних войск = .troop_details БЕЗ доп. классов
-            (варианты .troop_details.outHero и т.п. пропускаем — это чужие/движущиеся);
-          - внутри .units.last > tr идут ячейки .unit по порядку (1-я = t1, 2-я = t2, ...);
-          - если войск данного типа нет — ячейка имеет класс .unit.none.
-
-        Возвращает -1, если таблицу/тип определить не удалось (не путать с 0).
-        """
-        try:
-            self.safe_goto(f"{self.config.base_url}/{self.LOCATORS['rally_troops']}")
-            self.human_sleep(1.0, 2.0)
-
-            count = self.page.evaluate(f'''
-                () => {{
-                    // Берём ТОЛЬКО блок с классом ровно "troop_details"
-                    // (пропускаем troop_details outHero и прочие варианты)
-                    const blocks = document.querySelectorAll('.troop_details');
-                    let home = null;
-                    for (const b of blocks) {{
-                        const cls = (b.getAttribute('class') || '').trim().split(/\\s+/);
-                        if (cls.length === 1 && cls[0] === 'troop_details') {{ home = b; break; }}
-                    }}
-                    // fallback: первый troop_details без outHero
-                    if (!home) {{
-                        for (const b of blocks) {{
-                            if (!b.classList.contains('outHero')) {{ home = b; break; }}
-                        }}
-                    }}
-                    if (!home) return -1;
-
-                    const row = home.querySelector('.units.last tr') ||
-                                home.querySelector('.units tr');
-                    if (!row) return -1;
-
-                    const cells = row.querySelectorAll('.unit');
-                    if (!cells.length) return -1;
-
-                    // t{troop_index}: 1-based позиция ячейки .unit
-                    const idx = {troop_index} - 1;
-                    if (idx < 0 || idx >= cells.length) return -1;
-
-                    const cell = cells[idx];
-                    // "none" = войск этого типа нет
-                    if (cell.classList.contains('none')) return 0;
-
-                    const n = parseInt(cell.textContent.replace(/\\D/g, ''), 10);
-                    return isNaN(n) ? 0 : n;
-                }}
-            ''')
-            return int(count)
-        except Exception as e:
-            # -1 = "неизвестно": бот НЕ должен заказывать полную тренировку вслепую
-            logging.debug(f"Ошибка чтения войск: {e}")
-            return -1
 
     def _parse_owned_troops(self, html: str) -> dict | None:
         """
@@ -149,6 +90,10 @@ class TroopTrainer(BaseAction):
                 logging.info("[Train] Не удалось прочитать обзор войск (tt=1) — пропуск.")
                 return -1
             return int(totals.get(int(troop_index), 0))
+        except CaptchaDetectedError:
+            # Капча должна дойти до runner._guard, иначе бот продолжает
+            # ходить по страницам логин-редиректа и «не видит» проблему.
+            raise
         except Exception as e:
             logging.debug(f"get_owned_count error: {e}")
             return -1
@@ -174,7 +119,13 @@ class TroopTrainer(BaseAction):
                     return m ? parseInt(m[1], 10) : -1;
                 }}
             ''')
-            return int(max_n)
+            max_n = int(max_n)
+            # Нереалистичное число = склеенные цифры из соседних узлов.
+            # Лучше честное "неизвестно", чем заказ на 12 000 000 юнитов.
+            if max_n > 100000:
+                logging.warning(f"⚠️ Подозрительный максимум t{troop_index}: {max_n} — считаю неизвестным.")
+                return -1
+            return max_n
         except Exception as e:
             logging.debug(f"max affordable error: {e}")
             return -1
@@ -208,6 +159,20 @@ class TroopTrainer(BaseAction):
             # affordable — макс. на ВСЕ ресурсы; ограничиваем долей spend_pct
             budget_cap = affordable * spend_pct // 100
             count = min(count, budget_cap)
+        elif spend_pct < 100:
+            # -1 = максимум по ресурсам прочитать не удалось. Раньше бюджет
+            # spend_pct в этом случае просто исчезал и заказывалось ВСЁ.
+            if max_batch > 0:
+                logging.warning(
+                    f"⚠️ Максимум по ресурсам t{troop_index} не прочитан — "
+                    f"бюджет {spend_pct}% применить не к чему, ограничиваюсь партией {max_batch}."
+                )
+            else:
+                logging.warning(
+                    f"⚠️ Максимум по ресурсам t{troop_index} не прочитан — "
+                    f"бюджет {spend_pct}% применить не к чему, заказ отложен."
+                )
+                return False
         if max_batch > 0:
             count = min(count, max_batch)
 
@@ -235,7 +200,11 @@ class TroopTrainer(BaseAction):
 
             submit_btn = self.page.locator(self.LOCATORS['train_btn']).first
             if submit_btn.is_visible() and submit_btn.is_enabled():
-                self.human_click(submit_btn)
+                # Результат human_click раньше терялся: непрошедший клик
+                # рапортовался как успешный заказ.
+                if not self.human_click(submit_btn):
+                    logging.warning("⚠️ Не удалось нажать кнопку тренировки — заказ не отправлен.")
+                    return False
                 logging.info(f"⚔️ Отправлено в тренировку: {count} юнитов t{troop_index}.")
                 return True
             else:
@@ -248,9 +217,9 @@ class TroopTrainer(BaseAction):
     def get_training_queue_size(self, building: str) -> int:
         """
         Считает количество юнитов, уже стоящих в очереди тренировки здания.
-        Открывает казарму/конюшню и суммирует все числа из .buildDuration
-        (или аналогичных элементов списка очереди).
-        Возвращает 0 если очередь пуста, -1 если определить не удалось.
+
+        Возвращает 0 если очередь пуста, -1 если определить не удалось
+        («неизвестно» — вызывающий сам решает, что с этим делать).
         """
         try:
             build_url = self.LOCATORS.get(building, self.LOCATORS['barracks'])
@@ -259,26 +228,54 @@ class TroopTrainer(BaseAction):
 
             size = self.page.evaluate(r'''
                 () => {
-                    // Travian показывает очередь в .buildingList li или .trainUnit
-                    // Каждая запись содержит количество в .details или в заголовке
+                    // FIX: раньше складывались ВСЕ числа подряд, включая обратный
+                    // отсчёт (00:12:34) и часы сервера — очередь «раздувалась» до
+                    // тысяч и min_queue_size навсегда блокировал тренировку.
+                    // Вырезаем таймеры ДО поиска чисел и берём ПЕРВОЕ число.
+                    const clean = t => String(t || '').replace(/\d{1,2}:\d{2}:\d{2}/g, ' ');
+                    // \u0420\u0430\u0437\u0434\u0435\u043B\u0438\u0442\u0435\u043B\u044C \u0442\u044B\u0441\u044F\u0447 \u0437\u0430\u0441\u0447\u0438\u0442\u044B\u0432\u0430\u0435\u043C \u0442\u043E\u043B\u044C\u043A\u043E \u043F\u0435\u0440\u0435\u0434 \u0433\u0440\u0443\u043F\u043F\u043E\u0439 \u0438\u0437
+                    // \u0440\u043E\u0432\u043D\u043E 3 \u0446\u0438\u0444\u0440, \u0438\u043D\u0430\u0447\u0435 \u0434\u0432\u0430 \u0447\u0438\u0441\u043B\u0430 \u043F\u043E\u0434\u0440\u044F\u0434 ("5 120") \u0441\u043D\u043E\u0432\u0430
+                    // \u0441\u043A\u043B\u0435\u044F\u0442\u0441\u044F \u0432 \u043E\u0434\u043D\u043E.
+                    const num = t => {
+                        const m = clean(t).match(/\d{1,3}(?:[.,\s\u00A0]\d{3})+|\d+/);
+                        if (!m) return NaN;
+                        return parseInt(m[0].replace(/[.,\s\u00A0]/g, ''), 10);
+                    };
+
                     let total = 0;
-                    // Вариант 1: .trainList .trainUnit .amt / .units / число в тексте
-                    document.querySelectorAll('.trainList .trainUnit, .buildingList .item').forEach(row => {
-                        const txt = row.querySelector('.amt, .units, .count, strong');
-                        const n = txt ? parseInt(txt.textContent.replace(/\D/g, ''), 10) : NaN;
-                        if (!isNaN(n) && n > 0) total += n;
+                    let found = false;
+                    // Вариант 1: строки очереди. Количество лежит в отдельной
+                    // ячейке (.amt/.units/.count); strong убран — там же
+                    // рендерится таймер.
+                    const rows = document.querySelectorAll('.trainList .trainUnit, .buildingList .item');
+                    rows.forEach(row => {
+                        const cell = row.querySelector('.amt, .units, .count');
+                        if (!cell) return;
+                        const n = num(cell.textContent);
+                        if (!isNaN(n) && n > 0) { total += n; found = true; }
                     });
-                    if (total > 0) return total;
-                    // Вариант 2: текст вида "Обучается: 45" в .troopTraining / .trainInfo
+                    if (found) return total;
+                    // Строки очереди есть, а количество не вычитали => разметка
+                    // не та. Честнее вернуть "неизвестно", чем 0: на 0 бот
+                    // закажет весь дефицит поверх уже строящегося.
+                    if (rows.length) return -1;
+
+                    // Вариант 2: текст вида "Обучается: 45"
                     const info = document.querySelector('.troopTraining, .trainInfo');
                     if (info) {
-                        const m = info.textContent.match(/(\d+)/g);
-                        if (m) return m.reduce((s, x) => s + parseInt(x, 10), 0);
+                        const n = num(info.textContent);
+                        return isNaN(n) ? 0 : n;
                     }
-                    return 0;
+
+                    // Контейнер очереди есть, заданий в нём нет => очередь пуста.
+                    if (document.querySelector('.trainList, .buildingList')) return 0;
+                    // Ни очереди, ни списка — страница не та / не прогрузилась.
+                    return -1;
                 }
             ''')
             return int(size)
+        except CaptchaDetectedError:
+            raise
         except Exception as e:
             logging.debug(f"get_training_queue_size error: {e}")
             return -1
@@ -365,6 +362,13 @@ class TroopTrainer(BaseAction):
         label = f"'{village_name}'" if village_name else "глобальная"
         logging.info(f"Очередь тренировки [{label}]: {len(queue)} тип(ов) войск.")
 
+        # Сколько типов войск очередь тренирует в каждом здании.
+        # get_training_queue_size считает здание ЦЕЛИКОМ, без разбивки по типам,
+        # поэтому вычитать его из цели конкретного типа можно только когда
+        # в этом здании тренируется ровно один тип.
+        from collections import Counter
+        types_per_building = Counter(j.get("building") for j in queue)
+
         for job in queue:
             troop_idx = job["troop_type_index"]
             target    = job["target_count"]
@@ -372,14 +376,21 @@ class TroopTrainer(BaseAction):
             if target <= 0:
                 continue
 
-            # Пункт 2: проверяем сколько уже стоит в очереди здания
-            if min_queue > 0:
-                in_queue = self.get_training_queue_size(building)
-                if in_queue >= min_queue:
-                    logging.info(
-                        f"[{building}] t{troop_idx}: в очереди уже {in_queue} >= {min_queue} — пропуск."
-                    )
-                    continue
+            # Сколько юнитов уже стоит в очереди здания.
+            # FIX: раньше это читалось только при min_queue_size > 0 и никак
+            # не влияло на размер заказа — бот каждые 15 минут заказывал
+            # ВЕСЬ дефицит заново поверх уже строящегося.
+            in_queue = self.get_training_queue_size(building)
+            if in_queue < 0:
+                logging.warning(
+                    f"[{building}] Очередь тренировки не читается — считаю её пустой."
+                )
+                in_queue = 0
+            if min_queue > 0 and in_queue >= min_queue:
+                logging.info(
+                    f"[{building}] t{troop_idx}: в очереди уже {in_queue} >= {min_queue} — пропуск."
+                )
+                continue
 
             # Всего войск этого типа = дома + в пути (набеги/возврат),
             # иначе после отправки на оазисы бот видит «дома 0» и переобучает.
@@ -388,13 +399,35 @@ class TroopTrainer(BaseAction):
                 logging.info(f"Не удалось определить кол-во войск t{troop_idx}. Пропуск.")
                 continue
 
-            logging.info(f"[{building}] Войск t{troop_idx} (всего, вкл. в пути): {current}/{target}")
+            logging.info(
+                f"[{building}] Войск t{troop_idx} (всего, вкл. в пути): {current}/{target}"
+                f"{f', в очереди {in_queue}' if in_queue else ''}"
+            )
 
             if current >= target:
                 logging.info(f"t{troop_idx}: цель достигнута.")
                 continue
 
-            need = target - current
+            # Очередь здания идёт в зачёт цели, но только если в этом здании
+            # тренируется один тип войск. Иначе заказ первого типа списывался
+            # со второго (обе фаланги и мечники стоят в одних казармах),
+            # и второй тип не тренировался, пока очередь не опустеет.
+            if types_per_building[building] > 1:
+                counted_in_queue = 0
+                if in_queue:
+                    logging.debug(
+                        f"[{building}] в очереди {in_queue} юнитов, но здание делят "
+                        f"{types_per_building[building]} типа(ов) — в зачёт цели не идут."
+                    )
+            else:
+                counted_in_queue = in_queue
+            need = target - current - counted_in_queue
+            if need <= 0:
+                logging.info(
+                    f"t{troop_idx}: цель закрыта с учётом очереди "
+                    f"({current} + {counted_in_queue} >= {target})."
+                )
+                continue
             logging.info(f"t{troop_idx}: нужно дотренировать {need} юнитов.")
             self.train_troops(need, troop_idx, building=building)
             self.human_sleep(1.5, 3.0)

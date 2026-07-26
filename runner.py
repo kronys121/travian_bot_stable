@@ -9,33 +9,60 @@ load_dotenv()
 
 
 def run_bot(acc_config: dict):
-    import os
-    import time
-    import json
+    # ФИКС: os/time/logging уже импортированы на уровне модуля — повторный
+    # импорт внутри функции только затенял их и путал читателя.
     import random
-    import logging
     import threading
     from datetime import datetime
 
     # --- ЛОГИРОВАНИЕ -----------------------------------------------
     name = acc_config.get('name', 'bot')
-    os.makedirs("logs", exist_ok=True)
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    log_file = f"logs/{name}_{date_str}.log"
+    from utils.paths import account_file, log_file
+    from utils.jsonio import write_json, read_json
+
+    class _DailyLogHandler(logging.FileHandler):
+        """Лог аккаунта с автопереходом на файл нового дня.
+
+        ФИКС: дата считалась ОДИН раз при старте — бот, переживший полночь,
+        продолжал писать во вчерашний файл, а дашборд ищет лог за сегодня.
+        """
+
+        def __init__(self, account: str):
+            self._account = account
+            self._date = datetime.now().strftime("%Y-%m-%d")
+            super().__init__(str(log_file(account, self._date)), encoding="utf-8")
+
+        def emit(self, record):
+            today = datetime.now().strftime("%Y-%m-%d")
+            if today != self._date:
+                try:
+                    new_path = str(log_file(self._account, today))
+                    if self.stream:
+                        self.stream.close()
+                        self.stream = None  # FileHandler.emit откроет заново
+                    self.baseFilename = new_path
+                    self._date = today
+                except Exception:
+                    self.handleError(record)
+            super().emit(record)
+
     logging.basicConfig(
         level=logging.INFO,
         format=f'[{name}] %(asctime)s - [%(levelname)s] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
+        # ФИКС: main.py уже поднял root-логгер (при spawn он выполняется и в
+        # дочернем процессе), поэтому basicConfig был no-op — файл лога
+        # аккаунта не создавался вообще.
+        force=True,
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_file, encoding="utf-8"),
+            _DailyLogHandler(name),
         ]
     )
     logger = logging.getLogger(__name__)
     logger.info(f"🚀 Запуск бота для [{name}]")
 
     # --- СТАТУС (per-account файл — нет гонки между процессами) -----
-    from utils.paths import account_file
     status_file = str(account_file(name, 'status'))
 
     def write_status(data: dict):
@@ -44,13 +71,9 @@ def run_bot(acc_config: dict):
             "last_heartbeat": datetime.now().isoformat(),
             "alive": data.get("alive", True),
         }
-        tmp = status_file + ".tmp"
-        try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, status_file)
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось записать {status_file}: {e}")
+        # Запись через общий атомарный помощник: уникальный tmp на процесс/поток
+        # + os.replace (общий "<путь>.tmp" затирался вторым писателем).
+        write_json(status_file, payload, indent=2)
 
     # --- КОНФИГ ----------------------------------------------------
     from config.config import BotConfig
@@ -95,53 +118,42 @@ def run_bot(acc_config: dict):
     # Отпечаток браузера (viewport + User-Agent) СТАБИЛЕН для аккаунта:
     # генерируем один раз и сохраняем на диск. Реальный игрок заходит с
     # одного устройства — менять fingerprint при каждом рестарте подозрительно.
-    fingerprint_file = f"fingerprint_{name}.json"
-    fingerprint = None
-    try:
-        if os.path.exists(fingerprint_file):
-            with open(fingerprint_file, "r", encoding="utf-8") as f:
-                fingerprint = json.load(f)
-    except Exception as e:
-        logger.debug(f"fingerprint load error: {e}")
+    fingerprint_file = account_file(name, 'fingerprint')
+    fingerprint = read_json(fingerprint_file)
 
-    if not fingerprint or 'viewport' not in fingerprint or 'user_agent' not in fingerprint:
+    if (not isinstance(fingerprint, dict)
+            or 'viewport' not in fingerprint or 'user_agent' not in fingerprint):
         fingerprint = {
             'viewport': get_random_viewport(),
             'user_agent': get_random_user_agent(),
         }
-        try:
-            with open(fingerprint_file, "w", encoding="utf-8") as f:
-                json.dump(fingerprint, f, ensure_ascii=False, indent=2)
+        if write_json(fingerprint_file, fingerprint, indent=2):
             logger.info("🧬 Сгенерирован новый отпечаток браузера (сохранён на диск).")
-        except Exception as e:
-            logger.debug(f"fingerprint save error: {e}")
     else:
         logger.info("🧬 Использую сохранённый отпечаток браузера аккаунта.")
 
     viewport   = fingerprint['viewport']
     user_agent = fingerprint['user_agent']
 
-    # Прокси: поддерживаются схемы http:// https:// socks5:// (без логина/пароля)
-    # Chromium НЕ поддерживает socks5 с логином/паролем — используй http/https прокси.
-    from utils.accounts import parse_proxy, validate_proxy
-    from urllib.parse import urlparse as _urlparse
+    # Прокси: http:// https:// socks5:// — в том числе SOCKS5 с логином/паролем.
+    # Chromium сам SOCKS5-авторизацию не умеет, поэтому для такого прокси
+    # поднимаем локальный HTTP->SOCKS5 туннель (utils/proxy_tunnel.py) и отдаём
+    # браузеру его адрес. Раньше такой прокси просто отклонялся и бот не стартовал.
+    from utils.accounts import parse_proxy, requests_proxies, validate_proxy
+    from utils.proxy_tunnel import ProxyTunnelError, Socks5Tunnel
     proxy_str = acc_config.get("proxy") or ""
     proxy_cfg = None
+    # Прокси для requests. Им пользуется ВСЁ, что ходит в игру мимо браузера:
+    # поток мониторинга атак и сканер карты (сотни запросов тайлов за скан).
+    # requests+PySocks умеет SOCKS5 с логином/паролем сам, туннель тут не нужен.
+    # Кладём на config, чтобы источник был один: раньше каждый такой модуль
+    # заводил requests.Session сам и уходил в сеть с настоящего IP.
+    monitor_proxies = requests_proxies(proxy_str) if proxy_str else None
+    config.requests_proxies = monitor_proxies
+    # И User-Agent аккаунта — чтобы прямые запросы не отличались от браузерных.
+    config.user_agent = user_agent
 
     if proxy_str:
-        _u = _urlparse(proxy_str if "://" in proxy_str else "http://" + proxy_str)
-        if _u.scheme.lower() == "socks5" and _u.username:
-            logger.error(
-                "❌ Прокси отклонён: Chromium не поддерживает SOCKS5 с логином/паролем. "
-                "Используй HTTP/HTTPS прокси: http://user:pass@host:port"
-            )
-            write_status({
-                'last_action': 'Ошибка прокси: SOCKS5 с паролем не поддерживается — используй HTTP прокси',
-                'current_village': '—',
-                'alive': False,
-            })
-            return
-
         ok, err = validate_proxy(proxy_str, timeout=6.0)
         if not ok:
             logger.error(f"❌ Прокси недоступен — бот остановлен. {err}")
@@ -152,8 +164,29 @@ def run_bot(acc_config: dict):
             })
             return
 
-        proxy_cfg = parse_proxy(proxy_str)
-        logger.info(f"🌐 Использую прокси: {proxy_cfg['server']}")
+    # Туннель нужен только для SOCKS5 с авторизацией; в остальных случаях
+    # Socks5Tunnel — пустышка и просто отдаёт разобранный прокси как раньше.
+    # Останавливается в общем finally в самом низу run_bot (рядом с browser.close()).
+    tunnel = Socks5Tunnel(proxy_str)
+    if proxy_str:
+        try:
+            tunnel.__enter__()
+        except ProxyTunnelError as e:
+            logger.error(f"❌ Прокси-туннель не поднялся — бот остановлен. {e}")
+            write_status({
+                'last_action': f'Ошибка прокси: {e}',
+                'current_village': '—',
+                'alive': False,
+            })
+            return
+        proxy_cfg = tunnel.playwright_proxy() or parse_proxy(proxy_str)
+        if Socks5Tunnel.needed(proxy_str):
+            logger.info(
+                f"🌐 SOCKS5 с авторизацией: браузер идёт через локальный туннель "
+                f"{proxy_cfg['server']}"
+            )
+        else:
+            logger.info(f"🌐 Использую прокси: {proxy_cfg['server']}")
 
     with sync_playwright() as p:
         launch_kwargs = {
@@ -172,6 +205,7 @@ def run_bot(acc_config: dict):
                 'current_village': '—',
                 'alive': False,
             })
+            tunnel.__exit__(None, None, None)
             return
         context = browser.new_context(viewport=viewport, user_agent=user_agent)
         page    = context.new_page()
@@ -305,12 +339,25 @@ def run_bot(acc_config: dict):
                     f"Ошибка авторизации (попытка {attempt}/{LOGIN_MAX_ATTEMPTS}): {e}. "
                     f"Повтор через {delay//60}м {delay%60}с."
                 )
-                time.sleep(delay)
+                # ФИКС: спим кусками по 10-20с и между ними обновляем
+                # heartbeat — раньше один time.sleep(1800) молчал полчаса,
+                # и дашборд объявлял живого бота мёртвым.
+                left = float(delay)
+                while left > 0:
+                    write_status({
+                        'last_action': (f'Повтор входа через {int(left)}с '
+                                        f'(попытка {attempt}/{LOGIN_MAX_ATTEMPTS})'),
+                        'current_village': '—',
+                    })
+                    chunk = min(random.uniform(10, 20), left)
+                    time.sleep(chunk)
+                    left -= chunk
 
         if not login_ok:
             logger.error(f"Авторизация не удалась после {LOGIN_MAX_ATTEMPTS} попыток: {last_login_err}")
             config.notifier.error(f"{name}: вход", last_login_err)
             browser.close()
+            tunnel.__exit__(None, None, None)
             return
 
         # --- МОНИТОРИНГ АТАК В ОТДЕЛЬНОМ ПОТОКЕ --------------------
@@ -355,7 +402,15 @@ def run_bot(acc_config: dict):
                     session = req.Session()
                     for c in cookies_snapshot:
                         session.cookies.set(c['name'], c['value'])
-                    session.headers['User-Agent'] = 'Mozilla/5.0'
+                    # ФИКС: монитор ходит на dorf1.php мимо браузера, и раньше
+                    # делал это НАПРЯМУЮ — с настоящего IP машины и с куками
+                    # аккаунта, каждые 2 минуты. Для игры аккаунт выглядел
+                    # активным одновременно с двух адресов, а прокси терял смысл.
+                    if monitor_proxies:
+                        session.proxies.update(monitor_proxies)
+                    # И User-Agent берём тот же, что у браузера: голый
+                    # 'Mozilla/5.0' рядом с настоящим UA — заметное расхождение.
+                    session.headers['User-Agent'] = user_agent
 
                     resp = session.get(f"{config.base_url}/dorf1.php", timeout=10)
 
@@ -439,27 +494,35 @@ def run_bot(acc_config: dict):
 
         def safe_goto(url, **kwargs):
             kwargs.setdefault('wait_until', 'domcontentloaded')
+            last_err = None
             for attempt in range(3):
                 try:
-                    _original_goto(url, **kwargs)
+                    # ФИКС: Response возвращаем вызывающему — раньше был голый
+                    # return и результат page.goto() терялся.
+                    resp = _original_goto(url, **kwargs)
                     try:
                         page.wait_for_load_state('domcontentloaded', timeout=5000)
                     except Exception:
                         logging.debug("suppressed error in runner:423", exc_info=True)
-                    return
+                    return resp
                 except Exception as e:
                     err = str(e).lower()
                     if 'interrupted by another navigation' in err or 'navigation' in err:
+                        last_err = e
                         logger.debug(f"safe_goto retry {attempt + 1}: {e}")
                         time.sleep(1.5)
                         try:
                             page.wait_for_load_state('domcontentloaded', timeout=8000)
                         except Exception:
                             logging.debug("suppressed error in runner:433", exc_info=True)
-                        if attempt == 2:
-                            logger.warning(f"⚠️ safe_goto: не удалось перейти на {url}: {e}")
                     else:
                         raise
+            # ФИКС: после трёх неудач функция молча возвращала None — вызывающий
+            # код продолжал работать со СТАРОЙ страницей (чужая деревня!).
+            # Теперь бросаем исключение: for_each_village его поймает и просто
+            # перейдёт к следующей деревне.
+            logger.warning(f"⚠️ safe_goto: не удалось перейти на {url}: {last_err}")
+            raise last_err
 
         page.goto = safe_goto
 
@@ -467,8 +530,25 @@ def run_bot(acc_config: dict):
         # Каждая задача владеет страницей ЭКСКЛЮЗИВНО, пока выполняется.
         # Планировщик запускает их по одной => никто никого не перебивает.
 
-        scheduler = Scheduler(logger)
-        _captcha_until = [0.0]  # пауза после капчи
+        # Причина остановки, которая попадёт в status.json в finally.
+        # Раньше finally всегда писал безликое «Остановлен», и разобраться
+        # по дашборду, почему бот умер, было невозможно.
+        _stop_reason = ['Остановлен']
+
+        def _on_scheduler_fatal(job_name: str, exc: Exception, reason: str):
+            """Планировщик решил, что дальше крутиться бессмысленно.
+            Статус-файл — забота runner'а; уведомление отправит общий
+            обработчик ниже, когда исключение вылетит из run_forever."""
+            _stop_reason[0] = f'💥 Остановлен: {reason} (задача {job_name})'
+            write_status({
+                'last_action': _stop_reason[0],
+                'current_village': '—',
+                'alive': False,
+            })
+
+        scheduler = Scheduler(logger, on_fatal=_on_scheduler_fatal)
+        _captcha_until = [0.0]   # пауза после капчи
+        _evade_queued_at = [0.0]  # когда последний раз ставили эвакуацию в очередь
 
         # Задачи, которые САМИ решают, работать ли в ночном окне (sleep_hours):
         # стройка и кузница (по тумблеру build_night_enabled) и общий обход.
@@ -494,17 +574,41 @@ def run_bot(acc_config: dict):
 
         _refresh_night()
 
-        def _guard(task_name, fn):
-            """Обёртка: капча-пауза, ночной режим, обновление кук, статус."""
+        # Разовое разрешение отработать ночью для задачи, запущенной командой
+        # из GUI (force_farm). Постоянный night_ok здесь не годится: фарм по
+        # расписанию ночью спать обязан, а явная команда пользователя — нет.
+        # Билет со сроком годности: если задача так и не запустилась (её
+        # выключили в GUI, идёт пауза после капчи), просрочённый билет не должен
+        # через несколько часов пустить в ночь ОБЫЧНЫЙ плановый фарм.
+        _NIGHT_ONCE_TTL = 15 * 60
+        _night_once: dict = {}
+
+        def _take_night_ticket(task_name) -> bool:
+            """Забирает разовый ночной билет задачи (одноразово, с TTL)."""
+            deadline = _night_once.pop(task_name, 0)
+            return time.time() < deadline
+
+        def _guard(task_name, fn, night_ok=False):
+            """Обёртка: капча-пауза, ночной режим, обновление кук, статус.
+
+            night_ok=True — задача работает и ночью. Это эвакуация (спасение
+            армии) и явные команды пользователя (scan/rescan): раньше ночной
+            фильтр съедал их ДО вызова fn(), а команда из GUI уже была
+            безвозвратно вычитана из файла — эвазия при этом переставлялась
+            в очередь на каждом проходе idle_hook и крутилась вхолостую.
+            """
             def wrapped():
                 _refresh_night()  # окно ночи можно менять из GUI на лету
+                # Билет забираем ПЕРВЫМ делом: любой ранний return ниже иначе
+                # оставил бы его висеть до следующего запуска задачи.
+                allow_night = night_ok or _take_night_ticket(task_name)
                 # Пауза после капчи — стоп для ВСЕХ задач.
                 if time.time() < _captcha_until[0]:
                     logger.info(f"💤 [{task_name}] пропущена (пауза после капчи).")
                     return
                 # Ночь (sleep_hours): спят все задачи, кроме тех, что умеют
                 # работать ночью сами (стройка/кузница при build_night_enabled).
-                if attack_monitor.is_night_time() and task_name not in _NIGHT_OK_TASKS:
+                if not allow_night and attack_monitor.is_night_time() and task_name not in _NIGHT_OK_TASKS:
                     logger.info(f"🌙 [{task_name}] пропущена (ночной режим).")
                     return
                 write_status({'last_action': f'Выполняю: {task_name}', 'current_village': farm_manager.current_village_id})
@@ -552,13 +656,21 @@ def run_bot(acc_config: dict):
                 except CaptchaDetectedError:
                     raise
                 except Exception as e:
+                    # ФИКС: мёртвый браузер лечится только перезапуском процесса.
+                    # Раньше карусель глотала его на каждой деревне, задача
+                    # завершалась «успешно», и планировщик крутил её вечно.
+                    if Scheduler._looks_like_dead_browser(e):
+                        raise
                     logger.error(f"❌ [{label}] деревня {vid}: {e}")
                     continue
 
         # -- задачи --
         def job_farm():
+            # ФИКС: карусель проверяла только сырой farm_enabled, а планировщик —
+            # все три режима. Режим «только героем» пишет farm_enabled=false,
+            # и фарм останавливался на первой же деревне, ничего не сделав.
             for_each_village(lambda vk: farm_manager.run_farm_cycle(), "Фарм",
-                             should_continue=lambda: store.feature('farm_enabled', True))
+                             should_continue=_farm_active)
 
         def job_evade():
             """
@@ -577,8 +689,16 @@ def run_bot(acc_config: dict):
                 logger.info("🏃 Эвазия на кулдауне — пропуск (недавно уже эвакуировались).")
                 return
             write_status({'last_action': '🚨 АТАКА! Эвакуация войск', 'current_village': farm_manager.current_village_id})
-            for_each_village(lambda vk: farm_manager.evade_all_troops(), "Эвакуация")
-            attack_monitor._last_evade_ts = time.time()
+            results: list = []
+            for_each_village(lambda vk: results.append(farm_manager.evade_all_troops()), "Эвакуация")
+            # ФИКС: кулдаун ставился безусловно — одна ошибка (нет цели, упала
+            # страница) блокировала повторную попытку на 5 минут, пока атака шла.
+            # Ставим его только если хоть где-то реально увели войска либо
+            # уводить уже нечего. Тот же критерий, что в attack_monitor.maybe_evade.
+            if any(r in ("SUCCESS", "NO_TROOPS") for r in results):
+                attack_monitor.mark_evaded()
+            else:
+                logger.warning("🏃 Эвакуация ничего не увела — кулдаун не ставим, попробуем снова.")
 
         def _seconds_until_morning() -> int:
             """Секунды до конца ночного окна (sleep_hours[1])."""
@@ -678,7 +798,7 @@ def run_bot(acc_config: dict):
             if attack_monitor.is_night_time() and not store.feature('build_night_enabled', False):
                 wake = _seconds_until_morning() + random.randint(60, 600)
                 scheduler.set_next_run('smithy', wake)
-                logger.info(f"[smithy] Ночное время — кузница на паузе до утра.")
+                logger.info("[smithy] Ночное время — кузница на паузе до утра.")
                 return
             smithy_upgrader.run()
 
@@ -783,7 +903,8 @@ def run_bot(acc_config: dict):
         # FIX: без initial_delay next_run = "сейчас", и планировщик выполнял
         # эвакуацию ОДИН раз сразу при старте бота — без всякой атаки.
         # initial_delay=10**9 гарантирует запуск ТОЛЬКО через run_now.
-        scheduler.add('evade',     _guard('evade', job_evade),          interval_sec=10**9, priority=0,
+        # night_ok=True: эвакуация — спасение армии, ночной режим её не касается.
+        scheduler.add('evade',     _guard('evade', job_evade, night_ok=True), interval_sec=10**9, priority=0,
                       initial_delay=10**9)  # только по run_now
         scheduler.add('farm',      _guard('farm', job_farm),            interval_sec=farm_interval, priority=2)
         scheduler.add('build',     _guard('build', job_build),          interval_sec=7 * 60,  priority=3,
@@ -813,10 +934,12 @@ def run_bot(acc_config: dict):
         scheduler.add('village_round', _guard('village_round', job_village_round),
                       interval_sec=farm_interval, priority=2,
                       enabled_check=_grouped, initial_delay=45)
-        # Скан карты — только по требованию (run_now из idle_hook при команде из GUI)
-        scheduler.add('scan',      _guard('scan', job_scan),            interval_sec=10**9, priority=1,
+        # Скан карты — только по требованию (run_now из idle_hook при команде из GUI).
+        # night_ok=True: это явная команда пользователя, а команда уже безвозвратно
+        # вычитана из файла — ночью её нельзя просто выбросить.
+        scheduler.add('scan',      _guard('scan', job_scan, night_ok=True),     interval_sec=10**9, priority=1,
                       initial_delay=10**9)
-        scheduler.add('rescan',    _guard('rescan', job_rescan),        interval_sec=10**9, priority=1,
+        scheduler.add('rescan',    _guard('rescan', job_rescan, night_ok=True), interval_sec=10**9, priority=1,
                       initial_delay=10**9)
 
         # фарм можно выключить из GUI (и он на паузе в grouped-режиме)
@@ -851,7 +974,20 @@ def run_bot(acc_config: dict):
         def idle_hook():
             """Между задачами: heartbeat + срочная эвазия + команды из GUI + живой интервал фарма."""
             _refresh_night()  # окно ночи из GUI на лету
-            if _attack_flag.is_set():
+            # ФИКС: heartbeat пишем ПЕРВЫМ делом. Раньше он стоял в конце, и
+            # любое кривое значение из настроек (int('') на interval_minutes)
+            # роняло idle_hook до записи статуса — исключение гасилось на DEBUG,
+            # а дашборд объявлял живого бота мёртвым.
+            if attack_monitor.is_night_time():
+                write_status({'last_action': '🌙 Ночной режим', 'current_village': '—'})
+            else:
+                write_status({'last_action': '💤 Жду следующую задачу', 'current_village': farm_manager.current_village_id})
+            # Флаг снимает САМ job_evade (первой строкой). Гасить его здесь
+            # нельзя: если задачу пропустят (идёт пауза после капчи), эвакуация
+            # потеряется совсем и войска останутся дома под удар. Чтобы при этом
+            # не крутить очередь вхолостую, ограничиваем частоту постановки.
+            if _attack_flag.is_set() and time.time() - _evade_queued_at[0] > 60:
+                _evade_queued_at[0] = time.time()
                 scheduler.run_now('evade')
             # команды из GUI/Telegram (например, принудительный скан карты)
             try:
@@ -868,23 +1004,32 @@ def run_bot(acc_config: dict):
                         # выполнения next_run сбросится на now+interval — т.е.
                         # счётчик до следующего фарма фактически обнуляется.
                         logger.info("📥 Команда из GUI: принудительная атака войсками (сброс счётчика фарма).")
+                        # Команда уже безвозвратно вычитана из файла — ночной
+                        # фильтр не должен её молча съесть (см. _night_once).
+                        _night_once['farm'] = time.time() + _NIGHT_ONCE_TTL
                         scheduler.run_now('farm', priority=1)
             except Exception as e:
                 logger.debug(f"pop_commands error: {e}")
             # интервал фарма можно поменять в GUI на лету
-            new_interval = int(store.section('farm').get('interval_minutes', 60)) * 60
-            if new_interval != scheduler.jobs['farm'].interval:
-                scheduler.jobs['farm'].interval = new_interval
-                logger.info(f"🔄 Интервал фарма обновлён: {new_interval // 60} мин.")
+            try:
+                new_interval = int(store.section('farm').get('interval_minutes', 60)) * 60
+            except (TypeError, ValueError):
+                new_interval = 0
+                logger.warning("⚠️ Некорректный farm.interval_minutes в настройках — интервал не меняю.")
+            # ФИКС: патчился только 'farm', а grouped-обход стоит на том же
+            # интервале — в grouped-режиме бот писал «интервал обновлён» и
+            # продолжал ходить со стартовым значением до перезапуска.
+            if new_interval > 0:
+                for _job_name in ('farm', 'village_round'):
+                    _job = scheduler.jobs.get(_job_name)
+                    if _job and _job.interval != new_interval:
+                        _job.interval = new_interval
+                        logger.info(f"🔄 Интервал [{_job_name}] обновлён: {new_interval // 60} мин.")
             # порядок задач можно поменять в GUI на лету (перетаскиванием)
             new_order = apply_task_order()
             if new_order != _current_order[0]:
                 _current_order[0] = new_order
                 logger.info(f"🔀 Порядок задач обновлён: {' → '.join(new_order)}")
-            if attack_monitor.is_night_time():
-                write_status({'last_action': '🌙 Ночной режим', 'current_village': '—'})
-            else:
-                write_status({'last_action': '💤 Жду следующую задачу', 'current_village': farm_manager.current_village_id})
 
         # --- СТАРТ --------------------------------------------------
         write_status({'last_action': 'Запущен', 'current_village': '—'})
@@ -895,10 +1040,13 @@ def run_bot(acc_config: dict):
         except Exception as e:
             logger.critical(f"💥 Критическая ошибка: {e}", exc_info=True)
             config.notifier.error(f"{name}: критическая", e)
+            if _stop_reason[0] == 'Остановлен':
+                _stop_reason[0] = f'💥 Критическая ошибка: {str(e)[:120]}'
         finally:
             _stop_monitor.set()
-            write_status({'last_action': 'Остановлен', 'current_village': '—', 'alive': False})
+            write_status({'last_action': _stop_reason[0], 'current_village': '—', 'alive': False})
             browser.close()
+            tunnel.__exit__(None, None, None)  # гасим локальный прокси-туннель
             logger.info("🛑 Браузер закрыт.")
 
 

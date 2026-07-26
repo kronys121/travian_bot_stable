@@ -81,13 +81,6 @@ SMITHY = {
     'upgrade_btn_ad': 'button.textButtonV1.purple',
 }
 
-# ---------------------------------------------------------------------------
-# Общие элементы страницы
-# ---------------------------------------------------------------------------
-COMMON = {
-    'stockbar_lumber': '#l1',
-    'stockbar_clay': '#l2',
-    'stockbar_iron': '#l3',
-    'stockbar_crop': '#l4',
-    'error_message': '#contract .errorMessage, .upgradeBlocked, .errorMessage',
-}
+# Словарь COMMON (стокбар #l1..#l4 и error_message) удалён: на него никто не
+# ссылался, а свои селекторы стокбара держат stats_collector/trade_manager.
+# Мёртвый реестр опаснее его отсутствия — он «выглядел» источником правды.
