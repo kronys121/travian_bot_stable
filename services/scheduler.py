@@ -2,6 +2,7 @@ import heapq
 import itertools
 import logging
 import random
+import threading
 import time
 
 
@@ -57,6 +58,10 @@ class Scheduler:
         self.log = logger or logging.getLogger(__name__)
         self.jobs: dict[str, Job] = {}
         self._urgent: list = []            # heap: (priority, seq, name)
+        self._urgent_names: set[str] = set()
+        # run_now() зовётся и из потока мониторинга атак, а теперь у очереди
+        # два связанных состояния (heap + set) — менять их надо атомарно.
+        self._urgent_lock = threading.Lock()
         self._seq = itertools.count()
         self._stopped = False
         # on_fatal(job_name, exc, reason) — вызывается перед тем, как бросить
@@ -71,8 +76,20 @@ class Scheduler:
         self.jobs[name] = job
 
     def run_now(self, name, priority=0):
-        """Поставить задачу в срочную очередь (потокобезопасно для CPython)."""
-        if name in self.jobs:
+        """Поставить задачу в срочную очередь.
+
+        ФИКС: раньше каждый вызов клал НОВЫЙ элемент в heap. idle_hook
+        вызывает run_now('evade') пока держится флаг атаки, и очередь
+        набивалась десятками копий одной и той же эвакуации — после
+        первого выполнения остальные крутились вхолостую и блокировали
+        обычные задачи.
+        """
+        if name not in self.jobs:
+            return
+        with self._urgent_lock:
+            if name in self._urgent_names:
+                return
+            self._urgent_names.add(name)
             heapq.heappush(self._urgent, (priority, next(self._seq), name))
 
     def set_next_run(self, name: str, in_seconds: float):
@@ -82,8 +99,15 @@ class Scheduler:
         сколько ждать — передаёт это время планировщику вместо фиксированного
         интервала, чтобы задача build запустилась ровно когда постройка освободится.
         """
-        if name in self.jobs:
-            self.jobs[name].next_run = time.time() + max(10, float(in_seconds))
+        job = self.jobs.get(name)
+        if job is None:
+            return
+        try:
+            delay = float(in_seconds)
+        except (TypeError, ValueError):
+            self.log.warning(f"set_next_run({name!r}): нечисловое значение {in_seconds!r} — игнорирую.")
+            return
+        job.next_run = time.time() + max(10.0, delay)
 
     def stop(self):
         self._stopped = True
@@ -114,14 +138,33 @@ class Scheduler:
             except Exception as ce:
                 self.log.error(f"❌ on_fatal упал: {ce}")
 
+    def _pause_all(self, seconds: float):
+        """Разводит все задачи на паузу.
+
+        ФИКС: раньше сдвигался только next_run, а срочная очередь оставалась
+        полной — и сразу после объявленной «паузы 10 минут» планировщик продолжал
+        крутить накопившиеся срочные задачи по лежащему серверу.
+        """
+        pause_until = time.time() + seconds
+        for j in self.jobs.values():
+            j.next_run = max(j.next_run, pause_until)
+        with self._urgent_lock:
+            self._urgent.clear()
+            self._urgent_names.clear()
+
     def _pick_next(self):
         """Срочные задачи — первыми; иначе ближайшая по времени (при равенстве — по приоритету)."""
-        while self._urgent:
-            _, _, name = heapq.heappop(self._urgent)
+        while True:
+            with self._urgent_lock:
+                if not self._urgent:
+                    break
+                _, _, name = heapq.heappop(self._urgent)
+                self._urgent_names.discard(name)
             job = self.jobs.get(name)
             if job:
                 return job, True
-        ready = [j for j in self.jobs.values() if j.next_run <= time.time()]
+        now = time.time()
+        ready = [j for j in self.jobs.values() if j.next_run <= now]
         if not ready:
             return None, False
         ready.sort(key=lambda j: (j.priority, j.next_run))
@@ -167,10 +210,9 @@ class Scheduler:
                 self._fatal(job.name, e,
                             f"{self._consecutive_failures} задач подряд упали — пауза "
                             f"{self.BACKOFF_AFTER_FAILURES // 60} мин")
-                pause_until = time.time() + self.BACKOFF_AFTER_FAILURES
-                for j in self.jobs.values():
-                    j.next_run = max(j.next_run, pause_until)
+                self._pause_all(self.BACKOFF_AFTER_FAILURES)
                 self._consecutive_failures = 0
+                return
         took = time.time() - started
         if job.next_run != next_run_before:
             # set_next_run уже установил нужное время — не трогаем.
