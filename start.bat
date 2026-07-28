@@ -1,50 +1,42 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title Travian Bot - launcher
+title Travian Bot
 
-rem ---------------------------------------------------------------
-rem  Ищем интерпретатор: сначала локальное venv, потом системный.
-rem  "python" из PATH берём последним - в venv лежат уже уставновленные
-rem  зависимости, и запускать мимо него почти всегда ошибка.
-rem ---------------------------------------------------------------
+rem Порт веб-панели. Можно переопределить: set PORT=9000 && start.bat
+if "%PORT%"=="" set PORT=8080
+
+rem Ищем интерпретатор: сначала локальное окружение, потом системный.
 set "PY="
 if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
 if not defined PY if exist "venv\Scripts\python.exe" set "PY=venv\Scripts\python.exe"
-if not defined PY (
-    where python >nul 2>nul
-    if errorlevel 1 (
-        echo.
-        echo   [!] Python не найден. Установи Python 3.10+ и отметь
-        echo       галочку "Add python.exe to PATH" при установке.
-        echo.
-        pause
-        exit /b 1
-    )
-    set "PY=python"
-)
+if not defined PY set "PY=python"
 
-if not defined PORT set "PORT=8000"
+"%PY%" --version >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   Python не найден. Установите Python 3.10+ с python.org
+    echo   и отметьте галочку "Add Python to PATH".
+    echo.
+    pause
+    exit /b 1
+)
 
 :menu
 cls
 echo.
 echo   ================================================
-echo              T R A V I A N   B O T
+echo                    TRAVIAN BOT
 echo   ================================================
 echo.
-echo     Интерпретатор : %PY%
-echo.
-echo     [1]  Веб-панель      (браузер, http://127.0.0.1:%PORT%)
-echo     [2]  Десктопное GUI  (отдельное окно)
+echo     [1]  Веб-панель в браузере   (порт %PORT%)
+echo     [2]  Оконная панель (GUI)
 echo     [3]  Установить / обновить зависимости
-echo     [4]  Запустить бота в консоли (без панели)
-echo.
+echo     [4]  Запуск бота в консоли
 echo     [0]  Выход
 echo.
 set "choice="
-set /p "choice=  Выбор: "
+set /p choice="  Выбор: "
 
 if "%choice%"=="1" goto web
 if "%choice%"=="2" goto gui
@@ -56,31 +48,20 @@ goto menu
 :web
 cls
 echo.
-echo   Запускаю веб-панель на http://127.0.0.1:%PORT%
-echo   Закрыть - Ctrl+C в этом окне.
+echo   Веб-панель: http://127.0.0.1:%PORT%
+echo   Остановить: Ctrl+C
 echo.
-rem Браузер открываем с задержкой в фоне: uvicorn поднимается ~2 секунды,
-rem без паузы вкладка успевала открыться раньше сервера и показать ошибку.
+rem Браузер открываем с задержкой: uvicorn поднимается не мгновенно.
 start "" /min cmd /c "timeout /t 3 /nobreak >nul & start "" http://127.0.0.1:%PORT%"
 "%PY%" -m uvicorn app:app --host 127.0.0.1 --port %PORT%
 echo.
-echo   Веб-панель остановлена.
 pause
 goto menu
 
 :gui
 cls
-echo.
-echo   Запускаю десктопное GUI...
-echo.
 "%PY%" gui.py
-if errorlevel 1 (
-    echo.
-    echo   [!] GUI завершилось с ошибкой.
-    echo       Если не хватает customtkinter - выбери пункт [3].
-    echo.
-    pause
-)
+if errorlevel 1 pause
 goto menu
 
 :deps
@@ -91,7 +72,7 @@ echo.
 "%PY%" -m pip install --upgrade pip
 "%PY%" -m pip install -r requirements.txt
 echo.
-echo   Ставлю браузер для Playwright (нужен один раз)...
+echo   Установка браузера для Playwright...
 "%PY%" -m playwright install chromium
 echo.
 echo   Готово.
@@ -102,7 +83,8 @@ goto menu
 cls
 echo.
 set "acc="
-set /p "acc=  Имя аккаунта (пусто = все из config.yaml): "
+set /p acc="  Имя аккаунта (Enter — все сразу): "
+echo.
 if "%acc%"=="" (
     "%PY%" main.py
 ) else (
