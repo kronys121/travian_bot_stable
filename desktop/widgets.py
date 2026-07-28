@@ -47,6 +47,10 @@ class Button(tk.Frame):
 
     def __init__(self, parent, text: str, command=None, kind: str = "ghost",
                  padx: int = 13, pady: int = 6, font=None, **kw):
+        # Фон кнопки всегда определяется её видом. Вызовы часто передают
+        # bg родительской поверхности по привычке — молча игнорируем его,
+        # иначе super() получит bg дважды и упадёт с TypeError.
+        kw.pop("bg", None)
         bg, hover, fg = self.KINDS.get(kind, self.KINDS["ghost"])
         super().__init__(parent, bg=bg, bd=0, highlightthickness=0, cursor="hand2", **kw)
         self._bg, self._hover, self._fg = bg, hover, fg
