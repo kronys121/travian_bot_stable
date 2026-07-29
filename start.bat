@@ -29,19 +29,17 @@ echo   ================================================
 echo                    TRAVIAN BOT
 echo   ================================================
 echo.
-echo     [1]  Веб-панель в браузере   (порт %PORT%)
-echo     [2]  Оконная панель (GUI)
-echo     [3]  Установить / обновить зависимости
-echo     [4]  Запуск бота в консоли
+echo     [1]  Запустить веб-панель   (порт %PORT%)
+echo     [2]  Установить / обновить зависимости
+echo     [3]  Запуск бота в консоли (без панели)
 echo     [0]  Выход
 echo.
 set "choice="
 set /p choice="  Выбор: "
 
 if "%choice%"=="1" goto web
-if "%choice%"=="2" goto gui
-if "%choice%"=="3" goto deps
-if "%choice%"=="4" goto console
+if "%choice%"=="2" goto deps
+if "%choice%"=="3" goto console
 if "%choice%"=="0" exit /b 0
 goto menu
 
@@ -56,12 +54,6 @@ start "" /min cmd /c "timeout /t 3 /nobreak >nul & start "" http://127.0.0.1:%PO
 "%PY%" -m uvicorn app:app --host 127.0.0.1 --port %PORT%
 echo.
 pause
-goto menu
-
-:gui
-cls
-"%PY%" gui.py
-if errorlevel 1 pause
 goto menu
 
 :deps
