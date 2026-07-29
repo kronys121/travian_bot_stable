@@ -20,17 +20,22 @@ from pathlib import Path
 # Один процесс может писать один и тот же файл из нескольких потоков
 # (главный поток + поток мониторинга атак). Блокировка на путь защищает
 # read-modify-write целиком, а не только сам dump.
-_locks: dict[str, threading.Lock] = {}
+_locks: dict[str, threading.RLock] = {}
 _locks_guard = threading.Lock()
 
 
-def file_lock(path) -> threading.Lock:
-    """Возвращает (создавая при первом обращении) блокировку для пути."""
+def file_lock(path) -> threading.RLock:
+    """Возвращает (создавая при первом обращении) блокировку для пути.
+
+    RLock, а не Lock: вызывающий код берёт ту же блокировку вокруг
+    read-modify-write, а внутри зовёт read_json/write_json, которые теперь
+    берут её сами — с обычным Lock это был бы самозахват насмерть.
+    """
     key = str(Path(path).resolve())
     with _locks_guard:
         lock = _locks.get(key)
         if lock is None:
-            lock = threading.Lock()
+            lock = threading.RLock()
             _locks[key] = lock
         return lock
 
@@ -42,16 +47,21 @@ def write_json(path, data, indent: int | None = None) -> bool:
     Временный файл уникален для процесса и потока: иначе два писателя
     одного файла затирали общий `<path>.tmp` друг у друга и os.replace
     публиковал перемешанный JSON.
+
+    ФИКС: блокировка из file_lock() была объявлена, но ни здесь, ни в
+    read_json не бралась — т.е. защиты не было вообще, если вызывающий
+    код про неё забывал (а забывали почти везде).
     """
     p = Path(path)
     tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=indent)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, p)
+        with file_lock(p):
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=indent)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, p)
         return True
     except Exception as e:
         logging.error(f"❌ Не удалось записать {p.name}: {e}")
@@ -68,14 +78,15 @@ def read_json(path, default=None):
 
     ВАЖНО: битый файл — это НЕ то же самое, что отсутствующий. Здесь
     возвращается default, но в лог пишется ERROR, а сам файл сохраняется
-    под именем `<name>.corrupt-<pid>.json`, чтобы данные можно было
+    под именем `<name>.corrupt-<pid>`, чтобы данные можно было
     восстановить руками. Молча затирать чужие настройки нельзя.
     """
     p = Path(path)
-    if not p.exists() or p.stat().st_size == 0:
-        return default
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        with file_lock(p):
+            if not p.exists() or p.stat().st_size == 0:
+                return default
+            return json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         logging.error(f"❌ Битый JSON в {p.name}: {e}. Файл сохранён как .corrupt-*")
         quarantine(p)
@@ -90,7 +101,8 @@ def quarantine(path) -> Path | None:
     p = Path(path)
     try:
         dst = p.with_name(f"{p.name}.corrupt-{os.getpid()}")
-        p.replace(dst)
+        with file_lock(p):
+            p.replace(dst)
         return dst
     except OSError as e:
         logging.debug(f"quarantine {p}: {e}")

@@ -2,12 +2,13 @@
 Travian Bot Dashboard — GUI для управления ботом в реальном времени.
 
 Запуск:
-    uvicorn app:app --host 127.0.0.1 --port 8000
+    uvicorn app:app --host 127.0.0.1 --port 8080
     (из той же папки, где лежит runner.py)
 
-Доступ: если в .env задан DASHBOARD_TOKEN, каждый запрос должен нести его
-в заголовке X-Auth-Token или в параметре ?token=... . Без переменной
-дашборд открыт всем, кто дотянется до порта (см. предупреждение в логе).
+Режим работы — локальный однопользовательский: панель поднимается на машине
+владельца бота и слушает 127.0.0.1. Если панель всё-таки нужно открыть
+наружу, задай DASHBOARD_TOKEN в .env — тогда каждый запрос должен нести его
+в заголовке X-Auth-Token или в параметре ?token=... .
 
 Возможности:
   - Настройки каждого аккаунта на лету (data/<acc>/settings.json)
@@ -50,22 +51,14 @@ from utils.commands import push_command
 
 
 # ======= АУТЕНТИФИКАЦИЯ =======
-# Раньше на дашборде не было НИКАКОЙ проверки: любой, кто дотянулся до порта,
-# мог остановить бота, удалить аккаунт и прочитать прокси вместе с паролем.
-# Секрет берётся из переменной окружения DASHBOARD_TOKEN (.env).
+# Штатный режим — локальный: панель слушает 127.0.0.1 на машине владельца,
+# и пароль ей не нужен. DASHBOARD_TOKEN остаётся опциональным механизмом на
+# случай, когда порт всё-таки пробрасывают наружу.
 # load_dotenv тут обязателен: runner.py и main.py его зовут, а дашборд — нет,
 # и токен из .env просто не доезжал бы до процесса uvicorn.
 load_dotenv()
 
 DASHBOARD_TOKEN = (os.getenv("DASHBOARD_TOKEN") or "").strip()
-
-if not DASHBOARD_TOKEN:
-    logging.warning(
-        "⚠️ DASHBOARD_TOKEN не задан — дашборд работает БЕЗ пароля. "
-        "Любой, кто дотянется до порта, сможет остановить бота, удалить аккаунт "
-        "и увидеть прокси с паролем. Перед тем как открывать порт наружу задай "
-        "DASHBOARD_TOKEN в .env (и запускай uvicorn с --host 127.0.0.1)."
-    )
 
 
 def require_token(
@@ -76,8 +69,8 @@ def require_token(
 
     Query-параметр нужен потому, что "/" и "/account/{name}/logs" открываются
     прямо в браузере — заголовок туда не подставить.
-    Если DASHBOARD_TOKEN не задан, проверка выключена и всё работает как раньше
-    (локальный однопользовательский режим).
+    Если DASHBOARD_TOKEN не задан, проверка выключена: это штатный локальный
+    однопользовательский режим.
     """
     if not DASHBOARD_TOKEN:
         return
@@ -705,23 +698,17 @@ async def api_scan(name: str):
 
 @app.post("/api/accounts/{name}/reset_build")
 async def api_reset_build(name: str):
-    """Сбрасывает прогресс стройки аккаунта на шаг 1 (все деревни)."""
+    """Сбрасывает прогресс стройки аккаунта на шаг 1 (все деревни).
+
+    Прогресс — это обычный {village_key: step}. Раньше здесь создавался
+    SmartBuilder через __new__ в обход __init__ с ручной подстановкой
+    _progress_path: заклинание ломалось при любой правке конструктора.
+    """
     _safe_name(name)
     if get_account(name) is None:
         raise HTTPException(404, "Аккаунт не найден")
-    try:
-        from services.smart_builder import SmartBuilder
-
-        class _FakeConfig:
-            pass
-
-        cfg = _FakeConfig()
-        cfg.name = name
-        sb = SmartBuilder.__new__(SmartBuilder)
-        sb._progress_path = account_file(name, 'build_progress')
-        sb.reset_progress(village_key=None)
-    except Exception as e:
-        raise HTTPException(500, f"Ошибка сброса прогресса: {e}")
+    if not write_json(account_file(name, 'build_progress'), {}):
+        raise HTTPException(500, "Ошибка сброса прогресса")
     return {"ok": True}
 
 
@@ -833,6 +820,9 @@ def api_server_check(host: str):
     if not _is_public_host(hostname):
         return {"ok": False, "status_code": 0, "error": "Адрес не резолвится или он локальный"}
     try:
+        # ФИКС: было f"{{https://{host}}}/" — двойные скобки в f-строке дают
+        # литерал "{https://host}/", requests кидал MissingSchema, и проверка
+        # ВСЕГДА отвечала «Сервер не отвечает».
         resp = requests.get(
             f"https://{host}/", timeout=10,
             headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=False,
